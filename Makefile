@@ -1,14 +1,23 @@
 # =============================================================================
-# Certificado_operadores — automatización de tareas
+# Certificado_operadores â€” automatizaciÃ³n de tareas (multiplataforma: cmd/bash)
 # =============================================================================
-
-SHELL := /bin/bash
 
 .DEFAULT_GOAL := help
 .PHONY: help install dev pre-commit-install pre-commit lint format format-check typecheck test check build clean
 
 help: ## Muestra esta ayuda
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | awk 'BEGIN {FS = ":.*?## "}; {printf "  \033[36m%-18s\033[0m %s\n", $$1, $$2}'
+	@echo Objetivos disponibles:
+	@echo   make install        - uv sync
+	@echo   make dev            - install + hooks de pre-commit
+	@echo   make lint           - Ruff (lint)
+	@echo   make format         - Ruff (formato)
+	@echo   make format-check   - verifica el formato sin modificar
+	@echo   make typecheck      - ty (tipos)
+	@echo   make test           - pytest
+	@echo   make check          - lint + formato + tipos + pruebas
+	@echo   make pre-commit     - hooks sobre todo el repo
+	@echo   make build          - uv build
+	@echo   make clean          - limpia caches y artefactos
 
 install: ## Sincroniza el entorno virtual e instala dependencias
 	uv sync
@@ -24,7 +33,7 @@ pre-commit: ## Ejecuta todos los hooks de pre-commit sobre el repositorio
 lint: ## Ejecuta Ruff (lint)
 	uv run ruff check .
 
-format: ## Formatea el código con Ruff
+format: ## Formatea el cÃ³digo con Ruff
 	uv run ruff format .
 
 format-check: ## Verifica el formato sin modificarlo
@@ -36,11 +45,10 @@ typecheck: ## Verifica los tipos con ty (Astral)
 test: ## Ejecuta las pruebas
 	uv run pytest
 
-check: lint format-check typecheck test ## Verificación completa (lint + formato + tipos + pruebas)
+check: lint format-check typecheck test ## VerificaciÃ³n completa (lint + formato + tipos + pruebas)
 
 build: ## Construye el paquete (sdist + wheel)
 	uv build
 
-clean: ## Limpia cachés y artefactos
-	rm -rf .pytest_cache .ruff_cache .mypy_cache dist build htmlcov .coverage
-	find . -type d -name __pycache__ -prune -exec rm -rf {} +
+clean: ## Limpia cachÃ©s y artefactos (multiplataforma)
+	uv run python -c "import glob,os,shutil; [shutil.rmtree(p,ignore_errors=True) for p in ['.pytest_cache','.ruff_cache','.mypy_cache','dist','build','htmlcov']]; [os.remove(f) for f in ['.coverage'] if os.path.exists(f)]; [shutil.rmtree(p,ignore_errors=True) for p in glob.glob('**/__pycache__',recursive=True)]"
