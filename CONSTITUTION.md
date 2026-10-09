@@ -1,0 +1,209 @@
+# CONSTITUTION — Certificado_operadores
+
+> **Verdad central del proyecto.** Este documento define el propósito, el stack, la
+> estructura, las convenciones y el flujo de trabajo de `Certificado_operadores`. Si algo
+> aquí contradice al código, el código manda **y este archivo se actualiza**.
+
+> ⚠️ **Directiva de mantenimiento:** cada vez que se realicen cambios significativos
+> (nuevas funcionalidades, cambios arquitectónicos, adición de módulos o ajustes de
+> tecnologías), **se debe actualizar este archivo en el mismo commit** para mantener
+> la verdad central del proyecto bien documentada.
+
+---
+
+## 0. Identidad del proyecto
+
+| Campo            | Valor                          |
+|------------------|--------------------------------|
+| **Nombre**       | Certificado_operadores               |
+| **Descripción**  | Aplicación para la gestión del certificado de ideoneida de los operadores del sistema masivo mio, desde su vinculación, formación, supensión, retiro. el objetivo es poder gestionar la información de una manera ordenada y versionada de facil acceso y manipulación                |
+| **Repositorio**  | certificadooperadores                   |
+| **Autoría**      | Ing. Miguel Angel Ortiz Roldan — certificado.operadores@gmail.com  |
+| **Licencia**     | Privado                    |
+| **Rama principal** | `main`                       |
+| **Estado**       | En construcción 🚧             |
+
+## 1. Propósito y no-propósito
+
+### Propósito
+
+<!-- Una o dos frases: qué problema resuelve el proyecto y para quién. -->
+
+### No-propósito
+
+<!-- Qué NO es este proyecto. Evita expectativas equivocadas y desvíos de alcance. -->
+
+## 2. Alcance
+
+### Dentro del alcance
+
+- ...
+
+### Fuera del alcance (por ahora)
+
+- ...
+
+## 3. Stack técnico
+
+| Categoría         | Tecnología |
+|-------------------|------------|
+| **Lenguaje**      | Python 3.13+ |
+| **Entorno/deps**  | [`uv`](https://docs.astral.sh/uv/) |
+| **Testing**       | [`pytest`](https://docs.pytest.org/) |
+| **Lint / formato**| [Ruff](https://docs.astral.sh/ruff/) |
+| **Pre-commit**    | [pre-commit](https://pre-commit.com) |
+| **CI/CD**         | [GitHub Actions](.github/workflows/ci.yml) |
+
+> ⚠️ **Regla dura:** toda gestión de dependencias y entornos pasa por `uv`. Está
+> **prohibido** `pip` y `requirements.txt`.
+
+## 4. Estructura del repositorio
+
+```text
+certificado-operadores/
+├── src/certificado_operadores/    # código del paquete (src-layout)
+├── tests/                   # pruebas (pytest)
+├── docs/                    # documentación detallada (requerimientos, desacople, manual, funciones)
+├── scripts/                 # código permanente y reutilizable
+├── assets/                  # recursos (imágenes, datos de ejemplo)
+├── temp_agent/              # código temporal del agente (ignorado en Git)
+├── .github/                 # gobernanza (plantillas PR/issue, CI, Dependabot, labels)
+├── AGENTS.md                # contexto para agentes LLM
+├── CONSTITUTION.md          # este archivo — verdad central
+├── README.md                # puerta de entrada pública
+├── CONTRIBUTING.md          # guía de contribución
+├── CODE_OF_CONDUCT.md       # código de conducta
+├── Makefile                 # automatización de tareas
+├── pyproject.toml           # metadatos y dependencias (uv)
+├── uv.lock                  # lockfile determinista (versionado)
+├── .python-version          # versión de Python fijada
+└── .pre-commit-config.yaml  # hooks de calidad
+```
+
+## 5. Convenciones de código
+
+- **Responsabilidad única:** cada archivo/módulo y cada función hacen una sola cosa.
+- **Súper-comentado:** todo módulo, clase y función pública lleva docstring **en
+  español** (PEP 257) y comentarios donde el *porqué* no sea obvio.
+- **Estilo:** [PEP 8](https://peps.python.org/pep-0008/) y
+  [PEP 257](https://peps.python.org/pep-0257/), impuesto por **Ruff**
+  (`line-length = 100`, comillas dobles).
+- **Tipado:** anotaciones en funciones y firmas públicas.
+- **Nomenclatura:** `snake_case` (funciones/variables), `PascalCase` (clases),
+  `UPPER_CASE` (constantes).
+- **Pruebas:** `pytest` con el patrón **AAA** (*Arrange · Act · Assert*).
+- **Idioma:** documentación, comentarios, docstrings y commits en español;
+  identificadores de código en inglés.
+- **Prohibido hardcodear ("quemar código"):** sin valores, rutas, credenciales,
+  URLs, puertos ni parámetros incrustados; todo sale de configuración, constantes
+  con nombre, variables de entorno o se inyecta.
+- **La UI no ejecuta tareas (patrón Facade):** la interfaz (incluida Streamlit)
+  solo captura entrada, llama al Facade y muestra el resultado; cero lógica de
+  negocio y cero acceso directo a BD/APIs desde la UI.
+  `UI → Facade → Dominio → Infraestructura`.
+- **Inyección de dependencias:** las dependencias se inyectan, no se instancian en
+  la lógica.
+- **Orden de carpetas:** estructura predecible, una carpeta = una responsabilidad;
+  nada suelto en la raíz.
+- **Código temporal del agente:** los `fix`, `repair`, parches, workarounds,
+  migraciones puntuales y diagnósticos que no forman parte del proyecto van en
+  `temp_agent/` (ignorado en Git); nunca en la raíz, `src/`, `tests/`, `docs/` ni
+  `scripts/`.
+- **Reglas propias:**
+  - <!-- Invariantes del dominio (p. ej. "montos como enteros"). -->
+
+## 5bis. Seguridad, respaldos y autorización (obligatorio)
+
+- **Repositorio obligatorio:** un proyecto nuevo no arranca sin repositorio Git;
+  pide primero al usuario la URL del repositorio y la rama principal.
+- **No borrar sin autorización expresa:** archivos, carpetas y bases de datos se
+  borran solo con el consentimiento explícito del usuario (lista qué se borrará y
+  pregunta antes). Nada de `rm -rf`, `DROP`, `TRUNCATE`, `git push --force`,
+  `reset --hard` ni borrado de ramas sin permiso.
+- **Modificar solo con respaldo previo:** commitea/stashea/rama el trabajo anterior
+  y asegura el respaldo antes de editar. Los cambios grandes van en una rama, nunca
+  sobre `main`.
+- **Responsabilidad única + súper-comentado:** cada archivo y función hacen una
+  sola cosa y están exhaustivamente documentados (docstring en español).
+
+## 5ter. Documentación
+
+La documentación detallada vive en `docs/` (en español), enlazada desde el
+`README.md`:
+
+| Documento | Contenido |
+|-----------|-----------|
+| `docs/README.md` | Índice de la documentación. |
+| `docs/requerimientos.md` | Requisitos de software y hardware mínimo. |
+| `docs/desacople.md` | Arquitectura, capas y desacoplamiento. |
+| `docs/manual-usuario.md` | Guía de uso: qué hace cada botón/elemento. |
+| `docs/referencia-funciones.md` | Todas las funciones, su ubicación y descripción. |
+
+- **Docstrings en español** (PEP 257); identificadores en inglés.
+- Todo documento de `docs/` y este `README.md` terminan con:
+  **Autor:** Ing. Miguel Angel Ortiz Roldan
+
+## 6. Calidad y automatización
+
+| Herramienta   | Rol                       | Comando |
+|---------------|---------------------------|---------|
+| `uv`          | Entornos y dependencias   | `uv sync` |
+| Ruff          | Lint + formato            | `make lint` / `make format` |
+| pytest        | Pruebas                   | `make test` |
+| pre-commit    | Hooks antes de cada commit| `make pre-commit` |
+| GitHub Actions| CI (pre-commit + pruebas) | `.github/workflows/ci.yml` |
+
+- Ningún commit se salta los hooks (`--no-verify` prohibido salvo causa justificada y documentada).
+- La **CI debe estar en verde** antes de fusionar un Pull Request.
+- Toda dependencia nueva entra con `uv add` / `uv add --dev`.
+- **Pruebas tras cada función:** al terminar o aprobar cualquier función o
+  desarrollo, se ejecutan las pruebas necesarias. Una tarea no termina hasta que
+  las pruebas pasan (verde).
+- **Preguntar antes de empezar y avanzar por partes:** reúne primero toda la
+  información y permisos, luego avanza una función por ciclo:
+  **implementar → probar → corregir → documentar → commit**.
+
+## 7. Repositorio y Git
+
+- **Remoto (SSH):** `certificadooperadores.git`
+- **Rama principal:** `main`
+- **Estrategia de ramas:** `feat/...`, `fix/...`, `docs/...`, `refactor/...`, `test/...`, `chore/...`; integración vía Pull Request.
+- **Commits:** [Conventional Commits](https://www.conventionalcommits.org/) —
+  `feat:`, `fix:`, `docs:`, `refactor:`, `style:`, `test:`, `chore:`.
+
+## 8. Flujo diario (commit + push)
+
+```bash
+# 1. Ver cambios
+git status
+
+# 2. Verificación completa (lint + formato + pruebas)
+make check
+
+# 3. Agregar y commitear (los hooks se ejecutan solos)
+git add -A
+git commit -m "tipo: mensaje descriptivo"
+
+# 4. Subir
+git push
+```
+
+## 9. Historial de decisiones técnicas
+
+| Fecha    | Decisión | Motivo |
+|----------|----------|--------|
+| 2026-10-09 | Adoptar `CONSTITUTION.md` como fuente única de verdad | Claridad legal y operativa |
+
+## 10. Notas y tareas pendientes
+
+- [ ] Completar las secciones marcadas de este documento.
+- [ ] Configurar el remoto y proteger `main`.
+- [ ] Definir la primera funcionalidad y sus pruebas.
+- [ ] <!-- Agregar el roadmap del proyecto. -->
+
+## 11. Configuración local (no trackear)
+
+> Configuración específica de la máquina local. **NO incluir en commits.**
+
+<!-- p. ej. identidad Git vía includeIf, remotos, credenciales.
+     Ver references/agent-context.md. -->

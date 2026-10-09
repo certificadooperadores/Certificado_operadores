@@ -1,0 +1,46 @@
+# Archivos generados por Python
+__pycache__/
+*.py[oc]
+build/
+dist/
+wheels/
+*.egg-info/
+.venv/
+.uv/
+
+# Cachés de pruebas / linting
+.pytest_cache/
+.ruff_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+coverage.xml
+
+# Entorno y secretos (NUNCA versionar)
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Artefactos pesados / datos (revisar caso a caso)
+data/raw/
+data/processed/
+artifacts/
+*.h5
+*.pt
+*.pth
+*.onnx
+*.safetensors
+*.sqlite
+*.db
+
+# Código temporal del agente (nunca versionar)
+temp_agent/
+
+# Sistema operativo / IDE
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+*.swp

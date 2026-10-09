@@ -1,0 +1,20 @@
+version: 2
+
+updates:
+  # Keep only the ecosystems this project actually uses. Examples:
+  #   - package-ecosystem: "npm"
+  #   - package-ecosystem: "pip"
+  #   - package-ecosystem: "uv"     (Astral uv / pyproject.toml + uv.lock)
+  #   - package-ecosystem: "cargo"
+  #   - package-ecosystem: "gomod"
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels:
+      - chore
+      - infra
+    commit-message:
+      prefix: "chore"

@@ -1,0 +1,30 @@
+{
+    "project_dir":  ".",
+    "spec":  "docs/specs/001-spec.md",
+    "temp_dir":  "temp_agent",
+    "gate":  {
+                 "command":  [
+                                 "make",
+                                 "check"
+                             ]
+             },
+    "developer":  {
+                      "command":  [
+                                      "C:\\Users\\maortiz\\AppData\\Roaming\\ai.opencode.desktop\\cli\\2.0.26\\opencode-cli.exe",
+                                      "run",
+                                      "--agent",
+                                      "build",
+                                      "--auto"
+                                  ],
+                      "prompt_file":  "C:\\Users\\maortiz\\.agents\\skills\\agent-orchestrator\\assets\\prompts\\desarrollador.md"
+                  },
+    "verifier":  {
+                     "command":  [
+                                     "gemini",
+                                     "-p"
+                                 ],
+                     "prompt_file":  "C:\\Users\\maortiz\\.agents\\skills\\agent-orchestrator\\assets\\prompts\\verificador.md"
+                 },
+    "max_iterations":  5,
+    "commit_prefix":  "chore(ciclo-agentes)"
+}
