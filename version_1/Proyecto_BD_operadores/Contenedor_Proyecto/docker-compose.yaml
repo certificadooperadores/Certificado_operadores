@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # ----------------------------------------------------
+  # 1. SERVICIO DE BASE DE DATOS (PostgreSQL)
+  # ----------------------------------------------------
+  db:
+    image: postgres:15-alpine
+    container_name: operadores_db
+    restart: always
+    env_file:
+      - .env
+    ports:
+      - "5432:5432" # Expuesto a la red local para Power BI
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+
+  # ----------------------------------------------------
+  # 2. SERVICIO DE LA APLICACIÓN (Streamlit)
+  # ----------------------------------------------------
+  app:
+    build: .
+    container_name: operadores_app
+    restart: always
+    ports:
+      - "8505:8505" # ¡Aquí mapeamos tu nuevo puerto hacia el exterior!
+    env_file:
+      - .env
+    depends_on:
+      - db
+    volumes:
+      - .:/app # Esto sincroniza tus archivos locales con el contenedor en tiempo real
+      - ../Modelo_Estrella_Final_CSVs:/Modelo_Estrella_Final_CSVs
+      - ../Backups:/Backups
+
+volumes:
+  pgdata: # Este volumen es el "disco duro" virtual para que PostgreSQL no pierda los datos

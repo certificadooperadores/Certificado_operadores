@@ -1,0 +1,12 @@
+# Archivos de entorno
+.env
+
+# Archivos de la base de datos y CSVs con datos sensibles
+Modelo_Estrella_Final_CSVs/
+Backups/
+Contenedor_Proyecto/pgdata/
+
+# Archivos temporales de Python
+__pycache__/
+*.py[cod]
+*$py.class

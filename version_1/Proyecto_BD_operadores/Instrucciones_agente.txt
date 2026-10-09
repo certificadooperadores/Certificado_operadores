@@ -1,0 +1,25 @@
+1--------------------------------------------------------------------------------------------------
+archivos .py
+generar_modelo_estrella_maestro
+generar_modelo_estrella_comportamiento
+
+Contexto:
+ya tengo las tablas dim_impacto, dim_detalle_comportamiento, dim_comportamiento, fact_comportamiento
+
+se debe revisar que todas la tablas que van conformar la Base de datos, están bien estructuralmente  revisar si las tablas contienen las relaciones y los índices correctos, adicional revisar que deberíamos tener una columna de usuario
+
+2--------------------------------------------------------------------------------------------------
+
+app de streamlit
+Administracion operadores: (Reportes Bitácora y PQR) la Base de datos se unió misma tabla remplazar con Reporte de comportamientos en la app.
+
+el panel de contener una panel para registro de comportamientos y carga masivo similiar a Gestion de certificados, revisa su lógica y emula
+
+3--------------------------------------------------------------------------------------------------
+revisar todos los registros operadores, catalogos, de las tablas de hechos, deben tener el usuario que lo registra.
+
+
+
+
+
+

@@ -1,0 +1,5 @@
+[server]
+runOnSave = false
+fileWatcherType = "none"
+enableCORS = false
+enableXsrfProtection = false

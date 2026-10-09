@@ -1,0 +1,46 @@
+======================================================================
+GUÍA DE INICIO Y USO DE LA PLATAFORMA DE OPERADORES CON DOCKER
+======================================================================
+
+1. ¿CÓMO LEVANTAR EL PROYECTO POR PRIMERA VEZ EN OTRO PC?
+----------------------------------------------------------------------
+Paso 1: Generar los CSVs (Los datos iniciales)
+Asegúrate de tener el archivo Excel "BASE DE DATOS OPERADORESv4.xlsm" en la carpeta principal.
+Abre tu terminal en la carpeta principal (Proyecto_BD_operadores) y ejecuta:
+> python generar_modelo_estrella_maestro.py
+
+Paso 2: Encender el Servidor Docker
+Entra a la carpeta del contenedor:
+> cd Contenedor_Proyecto
+Construye y levanta la aplicación en segundo plano (el parámetro -d es para que no bloquee tu terminal):
+> docker-compose up --build -d
+
+Paso 3: Cargar la Base de Datos Inicial y Crear el Usuario Admin
+Una vez que el servidor esté encendido, inyecta los CSVs ejecutando este comando (esto solo se hace UNA VEZ en la vida de ese PC nuevo):
+> docker-compose exec app python init_db.py
+
+¡Listo! Tu base de datos y aplicación están 100% operativas.
+
+
+2. ¿CÓMO UN USUARIO FINAL ABRE LA APLICACIÓN?
+----------------------------------------------------------------------
+El usuario NO necesita saber nada de Docker, código o terminales. Siempre que el contenedor esté encendido (Paso 2), el usuario solo debe:
+
+1. Abrir su navegador web favorito (Google Chrome, Edge, etc.).
+2. Escribir en la barra de direcciones:
+   http://localhost:8505
+   (Nota: Si la app está en tu PC y el usuario se conecta desde otro PC en la misma oficina/red, debe escribir la IP de tu PC en lugar de "localhost", por ejemplo: http://192.168.1.50:8505)
+3. Iniciar sesión. Para el primer ingreso, usa el administrador:
+   - Usuario: admin
+   - Contraseña: admin123
+
+
+3. ¿CÓMO APAGAR EL SERVIDOR AL FINALIZAR EL DÍA?
+----------------------------------------------------------------------
+Si necesitas apagar el PC o detener el servidor, abre la terminal en la carpeta "Contenedor_Proyecto" y ejecuta:
+> docker-compose stop
+(Esto "pausará" los contenedores. Para volverlos a prender al día siguiente solo escribes "docker-compose start").
+
+Si por algún motivo quieres apagar todo y liberar recursos limpiamente (no te preocupes, los datos NO se borrarán gracias al volumen virtual "pgdata"), ejecuta:
+> docker-compose down
+(Al día siguiente lo vuelves a prender con "docker-compose up -d").
