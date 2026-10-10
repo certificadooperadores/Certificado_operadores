@@ -21,6 +21,9 @@ from pathlib import Path
 import pytest
 
 from certificado_operadores.infra.backup_service import (
+    PREFIJO_RESPALDO_PREVENTIVO,
+    TABLAS_COMPARACION,
+    USUARIO_RESTAURACION_POR_DEFECTO,
     BackupInfo,
     BackupProtegidoError,
     BackupService,
@@ -339,3 +342,313 @@ def test_pagina_compila_sin_errores_de_sintaxis() -> None:
 
     # Act / Assert
     compile(contenido, str(_RUTA_PAGINA), "exec")
+
+
+# --- Spec 014: helpers de comparación y restauración -------------------------
+def _crear_base_maestra(ruta: Path, conteos: dict[str, int]) -> None:
+    """Crea una base SQLite con las tablas maestras y sus conteos.
+
+    Args:
+        ruta: Ruta donde se creará la base de datos.
+        conteos: Registros a insertar por nombre de tabla.
+    """
+    conexion = sqlite3.connect(str(ruta))
+    try:
+        for tabla, filas in conteos.items():
+            conexion.execute(f'CREATE TABLE "{tabla}" (id INTEGER PRIMARY KEY)')
+            for _ in range(filas):
+                conexion.execute(f'INSERT INTO "{tabla}" DEFAULT VALUES')
+        conexion.execute(
+            "CREATE TABLE IF NOT EXISTS dim_version_bd ("
+            "id_version INTEGER PRIMARY KEY AUTOINCREMENT, "
+            "fecha_backup TEXT, archivo_origen TEXT, "
+            "fecha_restauracion TIMESTAMP DEFAULT CURRENT_TIMESTAMP, restaurado_por TEXT)"
+        )
+        conexion.commit()
+    finally:
+        conexion.close()
+
+
+def _agregar_filas(ruta: Path, tabla: str, cantidad: int) -> None:
+    """Agrega filas a una tabla existente de una base SQLite.
+
+    Args:
+        ruta: Ruta de la base de datos.
+        tabla: Tabla destino.
+        cantidad: Número de filas a insertar.
+    """
+    conexion = sqlite3.connect(str(ruta))
+    try:
+        for _ in range(cantidad):
+            conexion.execute(f'INSERT INTO "{tabla}" DEFAULT VALUES')
+        conexion.commit()
+    finally:
+        conexion.close()
+
+
+def _contar(ruta: Path, tabla: str) -> int:
+    """Cuenta las filas de una tabla en una base SQLite.
+
+    Args:
+        ruta: Ruta de la base de datos.
+        tabla: Tabla a contar.
+
+    Returns:
+        El número de filas de la tabla.
+    """
+    conexion = sqlite3.connect(str(ruta))
+    try:
+        return int(conexion.execute(f'SELECT COUNT(*) FROM "{tabla}"').fetchone()[0])
+    finally:
+        conexion.close()
+
+
+def _ultima_version(ruta: Path) -> tuple[str, str]:
+    """Devuelve el último archivo y usuario registrados en ``dim_version_bd``.
+
+    Args:
+        ruta: Ruta de la base de datos.
+
+    Returns:
+        La tupla ``(archivo_origen, restaurado_por)`` de la última versión.
+    """
+    conexion = sqlite3.connect(str(ruta))
+    try:
+        fila = conexion.execute(
+            "SELECT archivo_origen, restaurado_por FROM dim_version_bd "
+            "ORDER BY id_version DESC LIMIT 1"
+        ).fetchone()
+        return str(fila[0]), str(fila[1])
+    finally:
+        conexion.close()
+
+
+def _escribir_backup(directorio: Path, nombre: str, conteos: dict[str, int]) -> Path:
+    """Escribe un archivo de respaldo SQLite con las tablas y conteos dados.
+
+    Args:
+        directorio: Carpeta de respaldos.
+        nombre: Nombre del archivo de respaldo.
+        conteos: Registros a insertar por tabla.
+
+    Returns:
+        La ruta del respaldo creado.
+    """
+    directorio.mkdir(parents=True, exist_ok=True)
+    ruta = directorio / nombre
+    _crear_base_maestra(ruta, conteos)
+    return ruta
+
+
+@pytest.fixture
+def servicio_maestro(tmp_path: Path) -> BackupService:
+    """Servicio de backups sobre una base con las tablas maestras."""
+    origen = tmp_path / "operadores.db"
+    _crear_base_maestra(
+        origen,
+        {"dim_persona": 5, "dim_codigo": 3, "fact_licencias": 10, "dim_usuarios": 4},
+    )
+    return BackupService(
+        directorio=tmp_path / "backups",
+        origen_db=origen,
+        reloj=lambda: _FECHA_FIJA,
+    )
+
+
+# --- Spec 014: comparación de registros (CA-01) ------------------------------
+def test_comparar_backup_calcula_diferencias(servicio_maestro: BackupService) -> None:
+    """CA-01: compara tablas maestras y calcula la diferencia respaldo - actual."""
+    # Arrange
+    _escribir_backup(
+        servicio_maestro.directorio,
+        "respaldo.db",
+        {"dim_persona": 8, "dim_codigo": 1, "fact_licencias": 10, "dim_usuarios": 4},
+    )
+
+    # Act
+    comparacion = servicio_maestro.comparar_backup("respaldo.db")
+
+    # Assert
+    assert [fila["tabla"] for fila in comparacion] == list(TABLAS_COMPARACION)
+    persona = next(fila for fila in comparacion if fila["tabla"] == "dim_persona")
+    assert persona == {"tabla": "dim_persona", "actual": 5, "backup": 8, "diferencia": 3}
+    codigo = next(fila for fila in comparacion if fila["tabla"] == "dim_codigo")
+    assert codigo["actual"] == 3
+    assert codigo["backup"] == 1
+    assert codigo["diferencia"] == -2
+
+
+def test_comparar_backup_cuenta_cero_en_tabla_ausente(servicio_maestro: BackupService) -> None:
+    """CA-01: una tabla ausente en el respaldo cuenta como cero registros."""
+    # Arrange
+    _escribir_backup(servicio_maestro.directorio, "parcial.db", {"dim_persona": 2})
+
+    # Act
+    comparacion = servicio_maestro.comparar_backup("parcial.db")
+
+    # Assert
+    eventos = next(fila for fila in comparacion if fila["tabla"] == "fact_eventos_operador")
+    assert eventos["actual"] == 0
+    assert eventos["backup"] == 0
+    assert eventos["diferencia"] == 0
+    codigo = next(fila for fila in comparacion if fila["tabla"] == "dim_codigo")
+    assert codigo["actual"] == 3
+    assert codigo["backup"] == 0
+    assert codigo["diferencia"] == -3
+
+
+def test_comparar_backup_claves_exactas(servicio_maestro: BackupService) -> None:
+    """CA-01: cada fila expone las claves ``tabla``, ``actual``, ``backup`` y ``diferencia``."""
+    # Arrange
+    _escribir_backup(servicio_maestro.directorio, "respaldo.db", {"dim_persona": 5})
+
+    # Act
+    comparacion = servicio_maestro.comparar_backup("respaldo.db")
+
+    # Assert
+    assert comparacion
+    assert all(set(fila) == {"tabla", "actual", "backup", "diferencia"} for fila in comparacion)
+
+
+def test_comparar_backup_inexistente_falla(servicio_maestro: BackupService) -> None:
+    """CA-01: comparar un respaldo inexistente lanza ``FileNotFoundError``."""
+    # Arrange / Act / Assert
+    with pytest.raises(FileNotFoundError):
+        servicio_maestro.comparar_backup("no_existe.db")
+
+
+# --- Spec 014: restauración (CA-02) ------------------------------------------
+def test_restaurar_backup_sobrescribe_y_crea_preventivo(tmp_path: Path) -> None:
+    """CA-02: restaura sobrescribiendo la activa y crea el respaldo preventivo."""
+    # Arrange
+    origen = tmp_path / "operadores.db"
+    _crear_base_maestra(origen, {"dim_persona": 5, "dim_usuarios": 2})
+    servicio = BackupService(
+        directorio=tmp_path / "backups", origen_db=origen, reloj=lambda: _FECHA_FIJA
+    )
+    respaldo = servicio.crear_backup()
+    _agregar_filas(origen, "dim_persona", 3)
+
+    # Act
+    exito, mensaje = servicio.restaurar_backup(respaldo.nombre)
+
+    # Assert
+    assert exito is True
+    assert respaldo.nombre in mensaje
+    assert _contar(origen, "dim_persona") == 5
+    preventivos = sorted(
+        archivo
+        for archivo in servicio.directorio.iterdir()
+        if archivo.name.startswith(PREFIJO_RESPALDO_PREVENTIVO)
+    )
+    assert len(preventivos) == 1
+    assert preventivos[0].name.endswith(".db")
+    assert _contar(preventivos[0], "dim_persona") == 8
+
+
+def test_restaurar_backup_registra_la_version(tmp_path: Path) -> None:
+    """CA-02: la restauración queda registrada en ``dim_version_bd``."""
+    # Arrange
+    origen = tmp_path / "operadores.db"
+    _crear_base_maestra(origen, {"dim_persona": 1, "dim_usuarios": 1})
+    servicio = BackupService(
+        directorio=tmp_path / "backups", origen_db=origen, reloj=lambda: _FECHA_FIJA
+    )
+    respaldo = servicio.crear_backup()
+
+    # Act
+    exito, _ = servicio.restaurar_backup(respaldo.nombre)
+
+    # Assert
+    assert exito is True
+    archivo, usuario = _ultima_version(origen)
+    assert archivo == respaldo.nombre
+    assert usuario == USUARIO_RESTAURACION_POR_DEFECTO
+
+
+def test_restaurar_backup_sin_respaldo_de_seguridad(tmp_path: Path) -> None:
+    """CA-02: con ``crear_respaldo_seguridad=False`` no se genera copia preventiva."""
+    # Arrange
+    origen = tmp_path / "operadores.db"
+    _crear_base_maestra(origen, {"dim_persona": 1})
+    servicio = BackupService(
+        directorio=tmp_path / "backups", origen_db=origen, reloj=lambda: _FECHA_FIJA
+    )
+    respaldo = servicio.crear_backup()
+
+    # Act
+    exito, _ = servicio.restaurar_backup(respaldo.nombre, crear_respaldo_seguridad=False)
+
+    # Assert
+    assert exito is True
+    preventivos = [
+        archivo
+        for archivo in servicio.directorio.iterdir()
+        if archivo.name.startswith(PREFIJO_RESPALDO_PREVENTIVO)
+    ]
+    assert preventivos == []
+
+
+def test_restaurar_backup_inexistente_devuelve_falso(servicio_maestro: BackupService) -> None:
+    """CA-02: restaurar un respaldo inexistente no altera la base y reporta el fallo."""
+    # Arrange / Act
+    exito, mensaje = servicio_maestro.restaurar_backup("no_existe.db")
+
+    # Assert
+    assert exito is False
+    assert "no_existe.db" in mensaje
+
+
+def test_restaurar_backup_deja_respaldo_y_activa_iguales(tmp_path: Path) -> None:
+    """CA-02: tras restaurar, la comparación reporta diferencia cero en todas las tablas."""
+    # Arrange
+    origen = tmp_path / "operadores.db"
+    _crear_base_maestra(origen, {"dim_persona": 4, "dim_usuarios": 2})
+    servicio = BackupService(
+        directorio=tmp_path / "backups", origen_db=origen, reloj=lambda: _FECHA_FIJA
+    )
+    respaldo = servicio.crear_backup()
+    _agregar_filas(origen, "dim_persona", 6)
+
+    # Act
+    exito, _ = servicio.restaurar_backup(respaldo.nombre)
+
+    # Assert
+    assert exito is True
+    comparacion = servicio.comparar_backup(respaldo.nombre)
+    assert all(fila["diferencia"] == 0 for fila in comparacion)
+
+
+# --- Spec 014: UI de restauración --------------------------------------------
+def test_filas_comparacion_mapea_columnas_y_semaforo() -> None:
+    """CA-03: la tabla comparativa traduce columnas y marca el impacto."""
+    # Arrange
+    comparacion = [
+        {"tabla": "dim_persona", "actual": 10, "backup": 8, "diferencia": -2},
+        {"tabla": "dim_codigo", "actual": 5, "backup": 5, "diferencia": 0},
+        {"tabla": "dim_usuarios", "actual": 1, "backup": 4, "diferencia": 3},
+    ]
+
+    # Act
+    filas = ui.filas_comparacion(comparacion)
+
+    # Assert
+    assert filas[0]["Tabla"] == "dim_persona"
+    assert filas[0]["Registros Actuales"] == 10
+    assert filas[0]["Registros del Respaldo"] == 8
+    assert filas[0]["Diferencia"] == -2
+    assert "Se pierden 2" in filas[0]["Impacto"]
+    assert filas[1]["Impacto"] == ui.IMPACTO_SIN_CAMBIOS
+    assert "Se recuperan 3" in filas[2]["Impacto"]
+
+
+def test_ui_incluye_seccion_de_restauracion() -> None:
+    """CA-03: la UI ofrece la sección de restauración con comparación y confirmación."""
+    # Arrange
+    contenido = _RUTA_UI.read_text(encoding="utf-8")
+
+    # Act / Assert
+    assert "Restaurar Respaldo en la Base de Datos Activa" in contenido
+    assert "comparar_backup" in contenido
+    assert "restaurar_backup" in contenido
+    assert "Confirmar y Restaurar" in contenido

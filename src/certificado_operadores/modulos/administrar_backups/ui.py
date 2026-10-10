@@ -1,7 +1,7 @@
-"""Interfaz Streamlit del módulo de administración de backups (spec 005).
+"""Interfaz Streamlit del módulo de administración de backups (spec 005 y 014).
 
 Capa de presentación pura: muestra el listado de respaldos y delega la creación,
-protección, desprotección y eliminación en
+protección, desprotección, eliminación, comparación preventiva y restauración en
 :class:`~certificado_operadores.infra.backup_service.BackupService`. No realiza
 operaciones de sistema de archivos ni contiene sentencias SQL: toda la gestión
 física de los archivos pasa por el servicio de infraestructura.
@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
+from typing import cast
 
 import streamlit as st
 
@@ -41,6 +42,15 @@ ETIQUETA_PROTEGIDO = "🔒 Protegido"
 ETIQUETA_DESPROTEGIDO = "🔓 Desprotegido"
 """Texto mostrado para un respaldo desprotegido."""
 
+IMPACTO_SIN_CAMBIOS = "⚪ Sin cambios"
+"""Impacto cuando el respaldo conserva el mismo número de registros."""
+
+IMPACTO_RECUPERADOS = "🟢 Se recuperan {diferencia} registros"
+"""Impacto cuando el respaldo aporta más registros que la base activa."""
+
+IMPACTO_PERDIDOS = "🔴 Se pierden {diferencia} registros"
+"""Impacto cuando el respaldo tiene menos registros que la base activa."""
+
 
 def filas_backups(backups: list[BackupInfo]) -> list[dict[str, object]]:
     """Traduce los metadatos de respaldo a filas para la tabla de Streamlit.
@@ -62,10 +72,53 @@ def filas_backups(backups: list[BackupInfo]) -> list[dict[str, object]]:
     ]
 
 
+def _impacto(diferencia: int) -> str:
+    """Traduce la diferencia de registros a una etiqueta de semáforo.
+
+    Args:
+        diferencia: Registros del respaldo menos registros actuales.
+
+    Returns:
+        Etiqueta legible con el sentido del impacto (recupera, pierde o iguala).
+    """
+    if diferencia > 0:
+        return IMPACTO_RECUPERADOS.format(diferencia=diferencia)
+    if diferencia < 0:
+        return IMPACTO_PERDIDOS.format(diferencia=abs(diferencia))
+    return IMPACTO_SIN_CAMBIOS
+
+
+def filas_comparacion(comparacion: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Traduce la comparación del servicio a filas legibles con semáforo.
+
+    Args:
+        comparacion: Filas devueltas por ``BackupService.comparar_backup``.
+
+    Returns:
+        Lista de diccionarios con columnas legibles y la columna ``Impacto``.
+    """
+    filas: list[dict[str, object]] = []
+    for fila in comparacion:
+        diferencia = cast("int", fila["diferencia"])
+        filas.append(
+            {
+                "Tabla": fila["tabla"],
+                "Registros Actuales": fila["actual"],
+                "Registros del Respaldo": fila["backup"],
+                "Diferencia": diferencia,
+                "Impacto": _impacto(diferencia),
+            }
+        )
+    return filas
+
+
 def _render_encabezado() -> None:
     """Pinta el título y la ayuda del módulo."""
     st.title("💾 Gestión de Backups")
-    st.markdown("Desde aquí puedes crear, proteger o eliminar backups de la base de datos.")
+    st.markdown(
+        "Desde aquí puedes crear, proteger, eliminar, comparar y restaurar backups "
+        "de la base de datos."
+    )
 
 
 def _render_creacion(fachada: BackupService) -> None:
@@ -157,6 +210,66 @@ def _render_eliminacion(fachada: BackupService, respaldos: list[BackupInfo]) -> 
             st.rerun()
 
 
+def _render_restauracion(fachada: BackupService, respaldos: list[BackupInfo]) -> None:
+    """Pinta y procesa la restauración de un respaldo con análisis previo.
+
+    Args:
+        fachada: Servicio de backups inyectado desde el punto de entrada.
+        respaldos: Respaldos disponibles.
+    """
+    st.markdown("### ♻️ Restaurar Respaldo en la Base de Datos Activa")
+    st.warning(
+        "⚠️ La restauración sobrescribe los datos actuales. Antes de aplicarla se "
+        "creará automáticamente un respaldo preventivo de rescate."
+    )
+    if not respaldos:
+        st.info("No hay respaldos disponibles para restaurar.")
+        return
+
+    seleccionado = st.selectbox(
+        "Seleccione el respaldo a restaurar:",
+        [respaldo.nombre for respaldo in respaldos],
+        key="backup_restaurar_sel",
+    )
+
+    if st.button("🔍 Analizar Diferencias", key="backup_analizar"):
+        try:
+            comparacion = fachada.comparar_backup(seleccionado)
+        except (BackupError, OSError) as error:
+            st.error(f"❌ No se pudo analizar el respaldo: {error}")
+        else:
+            st.session_state["backup_comparacion"] = comparacion
+            st.session_state["backup_comparacion_sel"] = seleccionado
+
+    comparacion = st.session_state.get("backup_comparacion")
+    if comparacion and st.session_state.get("backup_comparacion_sel") == seleccionado:
+        st.dataframe(filas_comparacion(comparacion), use_container_width=True)
+
+    confirmar = st.checkbox(
+        "Confirmo que deseo sobrescribir la base de datos activa con este respaldo.",
+        key="backup_restaurar_confirmar",
+    )
+    if st.button(
+        "⚠️ Confirmar y Restaurar Base de Datos",
+        disabled=not confirmar,
+        key="backup_restaurar_ejecutar",
+    ):
+        try:
+            exito, mensaje = fachada.restaurar_backup(seleccionado)
+        except (BackupError, OSError) as error:
+            st.error(f"❌ No se pudo restaurar: {error}")
+        else:
+            if exito:
+                st.cache_data.clear()
+                st.cache_resource.clear()
+                st.session_state.pop("backup_comparacion", None)
+                st.session_state.pop("backup_comparacion_sel", None)
+                st.success(f"✅ {mensaje}")
+                st.rerun()
+            else:
+                st.error(f"❌ {mensaje}")
+
+
 def render_administrar_backups(fachada: BackupService | None = None) -> None:
     """Renderiza la pestaña completa de administración de backups.
 
@@ -185,5 +298,8 @@ def render_administrar_backups(fachada: BackupService | None = None) -> None:
     with columna_eliminacion:
         _render_eliminacion(fachada, respaldos)
 
+    st.markdown("---")
+    _render_restauracion(fachada, respaldos)
 
-__all__ = ["filas_backups", "render_administrar_backups"]
+
+__all__ = ["filas_backups", "filas_comparacion", "render_administrar_backups"]

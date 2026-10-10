@@ -21,7 +21,7 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `facade_usuarios` | `src/certificado_operadores/facade_usuarios.py` | Fachada de casos de uso de usuarios; orquesta y delega sin ejecutar SQL. |
 | `ui_sesion` | `src/certificado_operadores/ui_sesion.py` | Soporte de sesión persistente y refresco de datos para Streamlit; consume el Facade. |
 | `gestion_usuarios` | `src/certificado_operadores/modulos/gestion_usuarios/ui.py` | Interfaz Streamlit de gestión de usuarios; consume el Facade y no contiene SQL. |
-| `infra.backup_service` | `src/certificado_operadores/infra/backup_service.py` | Servicio de copias de seguridad de SQLite; encapsula el sistema de archivos. |
+| `infra.backup_service` | `src/certificado_operadores/infra/backup_service.py` | Servicio de copias de seguridad de SQLite; encapsula el sistema de archivos, la comparación y la restauración. |
 | `administrar_backups` | `src/certificado_operadores/modulos/administrar_backups/ui.py` | Interfaz Streamlit de backups; consume `BackupService` y no contiene SO ni SQL. |
 | `infra.eventos_repository` | `src/certificado_operadores/infra/eventos_repository.py` | Acceso a datos de `fact_eventos_operador`: filtros, lotes y mutaciones con auditoría (SQLAlchemy). |
 | `correccion_registros` | `src/certificado_operadores/modulos/correccion_registros/ui.py` | Interfaz Streamlit de corrección de registros; consume `EventosRepository` y no contiene SQL. |
@@ -289,10 +289,12 @@ importado por `Inicio.py` y por `pages/1_Configuracion.py`,
 
 ### Módulo `infra.backup_service` — `src/certificado_operadores/infra/backup_service.py`
 
-Servicio de copias de seguridad de la base SQLite (spec 005). Encapsula la
+Servicio de copias de seguridad de la base SQLite (spec 005 y 014). Encapsula la
 gestión física de los respaldos con ruta de directorio y base de origen
 **configurables** (variables de entorno `BACKUPS_DIR` y `BACKUP_DB_PATH`) y
-valores por defecto relativos; no contiene rutas absolutas quemadas.
+valores por defecto relativos; no contiene rutas absolutas quemadas. La spec 014
+añade la comparación preventiva de registros (`comparar_backup`) y la
+restauración atómica con respaldo de rescate (`restaurar_backup`).
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
@@ -306,36 +308,50 @@ valores por defecto relativos; no contiene rutas absolutas quemadas.
 | `BackupService.proteger` | `(nombre: str) -> BackupInfo` | RF-03: marca el respaldo como no eliminable. | `BackupInfo` |
 | `BackupService.desproteger` | `(nombre: str) -> BackupInfo` | RF-03: quita la protección del respaldo. | `BackupInfo` |
 | `BackupService.eliminar` | `(nombre: str) -> None` | RF-04: elimina un respaldo desprotegido. | — |
+| `BackupService.comparar_backup` | `(nombre_backup: str) -> list[dict[str, object]]` | CA-01: compara los registros de las tablas maestras entre la base activa y el respaldo. | `list[dict]` |
+| `BackupService.restaurar_backup` | `(nombre_backup: str, crear_respaldo_seguridad: bool = True) -> tuple[bool, str]` | CA-02: crea el respaldo preventivo y sobrescribe la base activa con la API atómica de SQLite. | `(bool, str)` |
+| `BackupService._crear_respaldo_preventivo` | `() -> BackupInfo` | Crea el respaldo automático de rescate con los datos actuales. | `BackupInfo` |
+| `BackupService._registrar_restauracion` | `(nombre_backup: str) -> None` | Inserta la versión restaurada en `dim_version_bd`. | — |
 | `BackupService._ruta` | `(nombre: str) -> Path` | Resuelve la ruta de un respaldo existente. | `Path` |
 | `BackupService._describir` | `(archivo: Path) -> BackupInfo` | Construye los metadatos de un archivo. | `BackupInfo` |
 | `BackupService._copiar` | `(origen: Path, destino: Path) -> None` | Copia con SQLite y degrada a copia de archivo. | — |
 | `BackupService._siguiente_nombre` | `() -> str` | Nombre versionado `DD-MM-AAAA_Vn.db`. | `str` |
+| `BackupService._nombre_preventivo` | `() -> str` | Nombre único del respaldo preventivo `pre_restauracion_...`. | `str` |
 | `BackupService._version_de` | `(nombre: str) -> int \| None` | Extrae el número de versión del nombre. | `int` o `None` |
 | `BackupService._nombre_protegido` | `(nombre: str) -> str` | Nombre con el sufijo `.protegido`. | `str` |
 | `BackupService._nombre_desprotegido` | `(nombre: str) -> str` | Nombre sin el sufijo `.protegido`. | `str` |
 
+Función de módulo: `_contar_filas(ruta: Path, tabla: str) -> int` — cuenta las filas
+de una tabla tolerando bases o tablas ausentes (devuelve 0).
+
 DTO: `BackupInfo`. Excepciones: `BackupError`, `BackupProtegidoError`.
 Constantes: `DIRECTORIO_POR_DEFECTO`, `VARIABLE_ENTORNO_DIRECTORIO`,
 `VARIABLE_ENTORNO_ORIGEN`, `EXTENSION_BACKUP`, `SUFIJO_PROTEGIDO`,
-`FORMATO_FECHA`, `SEPARADOR_VERSION`.
+`FORMATO_FECHA`, `FORMATO_FECHA_HORA`, `SEPARADOR_VERSION`,
+`PREFIJO_RESPALDO_PREVENTIVO`, `TABLAS_COMPARACION`, `TABLA_VERSION_BD`,
+`USUARIO_RESTAURACION_POR_DEFECTO`.
 
 ### Módulo `administrar_backups` — `src/certificado_operadores/modulos/administrar_backups/ui.py`
 
-Interfaz de Streamlit de administración de backups (spec 005). Página delgada:
-lista los respaldos y delega crear, proteger, desproteger y eliminar en
-`BackupService`. No contiene operaciones de sistema de archivos ni sentencias
-SQL (RNF-01).
+Interfaz de Streamlit de administración de backups (spec 005 y 014). Página
+delgada: lista los respaldos y delega crear, proteger, desproteger, eliminar,
+comparar y restaurar en `BackupService`. No contiene operaciones de sistema de
+archivos ni sentencias SQL (RNF-01).
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
 | `filas_backups` | `(backups: list[BackupInfo]) -> list[dict[str, object]]` | Mapea los respaldos a filas legibles para `st.dataframe`. | `list[dict]` |
+| `_impacto` | `(diferencia: int) -> str` | Traduce la diferencia de registros al semáforo (recupera, pierde o iguala). | `str` |
+| `filas_comparacion` | `(comparacion: list[dict[str, object]]) -> list[dict[str, object]]` | CA-03: traduce la comparación a filas legibles con columna `Impacto`. | `list[dict]` |
 | `_render_encabezado` | `() -> None` | Título y ayuda del módulo. | — |
 | `_render_creacion` | `(fachada: BackupService) -> None` | Formulario de creación de respaldos. | — |
 | `_render_proteccion` | `(fachada, respaldos) -> None` | Proteger / desproteger un respaldo. | — |
 | `_render_eliminacion` | `(fachada, respaldos) -> None` | Eliminar un respaldo desprotegido. | — |
+| `_render_restauracion` | `(fachada: BackupService, respaldos: list[BackupInfo]) -> None` | CA-03: análisis de diferencias y confirmación de la restauración. | — |
 | `render_administrar_backups` | `(fachada: BackupService \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
 
-Constantes: `FORMATO_FECHA_HORA`, `ETIQUETA_PROTEGIDO`, `ETIQUETA_DESPROTEGIDO`.
+Constantes: `FORMATO_FECHA_HORA`, `ETIQUETA_PROTEGIDO`, `ETIQUETA_DESPROTEGIDO`,
+`IMPACTO_SIN_CAMBIOS`, `IMPACTO_RECUPERADOS`, `IMPACTO_PERDIDOS`.
 Punto de entrada: `src/certificado_operadores/pages/1_Configuracion.py` (importa
 `render_administrar_backups` y lo invoca en la pestaña de backups).
 
@@ -345,9 +361,13 @@ Punto de entrada: `src/certificado_operadores/pages/1_Configuracion.py` (importa
 - **Cobertura:** servicio contra directorio y base SQLite temporales (creación
   versionada RF-02 y copia consistente, listado RF-01, protección/
   desprotección RF-03, eliminación y bloqueo de protegidos RF-04, resolución
-  por variable de entorno); funciones puras de la UI (`filas_backups`); y
-  criterios estáticos (paquete CA-01, UI sin SO ni SQL CA-03/RNF-01, página con
-  `render_administrar_backups` y sin `exec` CA-02/RNF-02). Patrón AAA.
+  por variable de entorno, comparación de registros con diferencia por tabla y
+  tolerancia a tablas ausentes CA-01, restauración atómica con respaldo
+  preventivo y registro en `dim_version_bd` CA-02); funciones puras de la UI
+  (`filas_backups` y `filas_comparacion` con semáforo); y criterios estáticos
+  (paquete CA-01, UI sin SO ni SQL CA-03/RNF-01, sección de restauración con
+  confirmación, página con `render_administrar_backups` y sin `exec`
+  CA-02/RNF-02). Patrón AAA.
 
 ### Módulo `infra.eventos_repository` — `src/certificado_operadores/infra/eventos_repository.py`
 

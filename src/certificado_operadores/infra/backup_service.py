@@ -43,8 +43,30 @@ SUFIJO_PROTEGIDO = ".protegido"
 FORMATO_FECHA = "%d-%m-%Y"
 """Formato de fecha usado en el nombre versionado de cada respaldo."""
 
+FORMATO_FECHA_HORA = "%Y-%m-%d %H:%M:%S"
+"""Formato de fecha y hora usado al registrar la restauración en ``dim_version_bd``."""
+
 SEPARADOR_VERSION = "_V"
 """Separador entre la fecha y el número de versión en el nombre."""
+
+PREFIJO_RESPALDO_PREVENTIVO = "pre_restauracion_"
+"""Prefijo del respaldo automático de rescate creado antes de cada restauración."""
+
+TABLAS_COMPARACION: tuple[str, ...] = (
+    "dim_persona",
+    "dim_codigo",
+    "fact_licencias",
+    "fact_eventos_operador",
+    "fact_comportamiento",
+    "dim_usuarios",
+)
+"""Tablas maestras comparadas antes de restaurar un respaldo (spec 014)."""
+
+TABLA_VERSION_BD = "dim_version_bd"
+"""Tabla que registra el origen/versión de la base de datos activa."""
+
+USUARIO_RESTAURACION_POR_DEFECTO = "sistema"
+"""Usuario registrado en ``dim_version_bd`` cuando la restauración no lo especifica."""
 
 _PATRON_VERSION = re.compile(r"_V(\d+)$")
 
@@ -100,6 +122,36 @@ def _copiar_con_sqlite(origen: Path, destino: Path) -> None:
             conexion_destino.close()
     finally:
         conexion_origen.close()
+
+
+def _contar_filas(ruta: Path, tabla: str) -> int:
+    """Cuenta las filas de una tabla en una base SQLite, tolerando ausencias.
+
+    Args:
+        ruta: Ruta de la base de datos a inspeccionar.
+        tabla: Nombre de la tabla a contar (debe provenir de
+            :data:`TABLAS_COMPARACION`, nunca de entrada del usuario).
+
+    Returns:
+        El número de filas de la tabla; ``0`` si la base no existe, no es una
+        base SQLite válida o la tabla no está presente.
+    """
+    if not ruta.is_file():
+        return 0
+    conexion = sqlite3.connect(str(ruta))
+    try:
+        existe = conexion.execute(
+            "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+            (tabla,),
+        ).fetchone()
+        if not existe or existe[0] == 0:
+            return 0
+        filas = conexion.execute(f'SELECT COUNT(*) FROM "{tabla}"').fetchone()
+        return int(filas[0]) if filas else 0
+    except sqlite3.DatabaseError:
+        return 0
+    finally:
+        conexion.close()
 
 
 class BackupService:
@@ -240,6 +292,138 @@ class BackupService:
             raise BackupProtegidoError(f"El respaldo protegido no se puede eliminar: {nombre}")
         ruta.unlink()
 
+    def comparar_backup(self, nombre_backup: str) -> list[dict[str, object]]:
+        """Compara los registros de las tablas maestras entre la base activa y un respaldo.
+
+        Analiza ambas bases —la activa (:attr:`origen_db`) y el archivo de
+        respaldo— y calcula, por cada tabla de :data:`TABLAS_COMPARACION`, la
+        diferencia de registros del respaldo frente a la base actual. Es la
+        verificación preventiva que el usuario revisa antes de restaurar.
+
+        Args:
+            nombre_backup: Nombre del respaldo a comparar.
+
+        Returns:
+            Una fila por tabla con las claves ``tabla``, ``actual``, ``backup``
+            y ``diferencia`` (``backup`` menos ``actual``).
+
+        Raises:
+            FileNotFoundError: Si el respaldo indicado no existe.
+        """
+        ruta_backup = self._ruta(nombre_backup)
+        activa = self.origen_db
+        comparacion: list[dict[str, object]] = []
+        for tabla in TABLAS_COMPARACION:
+            actual = _contar_filas(activa, tabla)
+            respaldo = _contar_filas(ruta_backup, tabla)
+            comparacion.append(
+                {
+                    "tabla": tabla,
+                    "actual": actual,
+                    "backup": respaldo,
+                    "diferencia": respaldo - actual,
+                }
+            )
+        return comparacion
+
+    def restaurar_backup(
+        self, nombre_backup: str, crear_respaldo_seguridad: bool = True
+    ) -> tuple[bool, str]:
+        """Restaura un respaldo sobre la base de datos activa.
+
+        Crea de forma opcional un respaldo preventivo de rescate
+        (``PREFIJO_RESPALDO_PREVENTIVO`` + fecha) con los datos actuales antes de
+        sobrescribir la base de origen mediante la API atómica de respaldo de
+        SQLite. Finalmente registra el archivo restaurado en
+        :data:`TABLA_VERSION_BD` para que el indicador lateral refleje la versión.
+
+        Args:
+            nombre_backup: Nombre del respaldo que se desea restaurar.
+            crear_respaldo_seguridad: Si es ``True`` (por defecto) genera un
+                respaldo preventivo de los datos actuales.
+
+        Returns:
+            Una tupla ``(éxito, mensaje)``; el mensaje describe el resultado o,
+            si falla, la causa controlada del fallo.
+        """
+        try:
+            ruta_backup = self._ruta(nombre_backup)
+        except FileNotFoundError as error:
+            return False, str(error)
+
+        if not self.origen_db.is_file():
+            return False, f"No existe la base de datos activa: {self.origen_db}"
+
+        preventivo = ""
+        if crear_respaldo_seguridad:
+            try:
+                preventivo = self._crear_respaldo_preventivo().nombre
+            except (BackupError, OSError) as error:
+                return False, f"No se pudo crear el respaldo preventivo: {error}"
+
+        try:
+            _copiar_con_sqlite(ruta_backup, self.origen_db)
+        except (sqlite3.DatabaseError, OSError) as error:
+            return False, f"No se pudo restaurar el respaldo: {error}"
+
+        try:
+            self._registrar_restauracion(nombre_backup)
+        except sqlite3.DatabaseError as error:
+            return False, f"Base restaurada, pero no se registró en {TABLA_VERSION_BD}: {error}"
+
+        mensaje = f"Base de datos restaurada desde '{nombre_backup}'."
+        if preventivo:
+            mensaje = f"{mensaje} Respaldo preventivo: '{preventivo}'."
+        return True, mensaje
+
+    def _crear_respaldo_preventivo(self) -> BackupInfo:
+        """Crea el respaldo automático de rescate con los datos actuales.
+
+        Returns:
+            Los metadatos del respaldo preventivo recién creado.
+
+        Raises:
+            FileNotFoundError: Si la base activa no existe.
+            BackupError: Si la copia falla por un error del sistema de archivos.
+        """
+        origen = self.origen_db
+        if not origen.is_file():
+            raise FileNotFoundError(f"No existe la base de datos de origen: {origen}")
+        directorio = self.directorio
+        directorio.mkdir(parents=True, exist_ok=True)
+        destino = directorio / self._nombre_preventivo()
+        self._copiar(origen, destino)
+        return self._describir(destino)
+
+    def _registrar_restauracion(self, nombre_backup: str) -> None:
+        """Registra en ``dim_version_bd`` la versión restaurada.
+
+        Args:
+            nombre_backup: Nombre del respaldo restaurado.
+
+        Raises:
+            sqlite3.DatabaseError: Si no se puede escribir el registro.
+        """
+        fecha = self._reloj().strftime(FORMATO_FECHA_HORA)
+        conexion = sqlite3.connect(str(self.origen_db))
+        try:
+            conexion.execute(
+                f"CREATE TABLE IF NOT EXISTS {TABLA_VERSION_BD} ("
+                "id_version INTEGER PRIMARY KEY AUTOINCREMENT, "
+                "fecha_backup TEXT, "
+                "archivo_origen TEXT, "
+                "fecha_restauracion TIMESTAMP DEFAULT CURRENT_TIMESTAMP, "
+                "restaurado_por TEXT)"
+            )
+            conexion.execute(
+                f"INSERT INTO {TABLA_VERSION_BD} (fecha_backup, archivo_origen, restaurado_por) "
+                "VALUES (?, ?, ?)",
+                (fecha, nombre_backup, USUARIO_RESTAURACION_POR_DEFECTO),
+            )
+            conexion.commit()
+        finally:
+            conexion.close()
+
     def _ruta(self, nombre: str) -> Path:
         """Devuelve la ruta de un respaldo existente o falla si no existe.
 
@@ -310,6 +494,22 @@ class BackupService:
         siguiente = max(versiones, default=0) + 1
         return f"{fecha}{SEPARADOR_VERSION}{siguiente}{EXTENSION_BACKUP}"
 
+    def _nombre_preventivo(self) -> str:
+        """Calcula un nombre único para el respaldo automático de rescate.
+
+        Returns:
+            El nombre ``pre_restauracion_DD-MM-AAAA.db`` o, si ya existe, con el
+            sufijo de versión ``_Vn`` para no sobrescribir rescates previos.
+        """
+        fecha = self._reloj().strftime(FORMATO_FECHA)
+        base = f"{PREFIJO_RESPALDO_PREVENTIVO}{fecha}"
+        nombre = f"{base}{EXTENSION_BACKUP}"
+        version = 1
+        while (self.directorio / nombre).exists():
+            version += 1
+            nombre = f"{base}{SEPARADOR_VERSION}{version}{EXTENSION_BACKUP}"
+        return nombre
+
     def _version_de(self, nombre: str) -> int | None:
         """Extrae el número de versión del nombre de un respaldo.
 
@@ -354,8 +554,13 @@ __all__ = [
     "DIRECTORIO_POR_DEFECTO",
     "EXTENSION_BACKUP",
     "FORMATO_FECHA",
+    "FORMATO_FECHA_HORA",
+    "PREFIJO_RESPALDO_PREVENTIVO",
     "SEPARADOR_VERSION",
     "SUFIJO_PROTEGIDO",
+    "TABLAS_COMPARACION",
+    "TABLA_VERSION_BD",
+    "USUARIO_RESTAURACION_POR_DEFECTO",
     "VARIABLE_ENTORNO_DIRECTORIO",
     "VARIABLE_ENTORNO_ORIGEN",
     "BackupError",
