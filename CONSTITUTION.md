@@ -62,6 +62,7 @@
 ```text
 certificado-operadores/
 ├── src/certificado_operadores/    # código del paquete (src-layout)
+│   └── facade.py                  # Fachada de casos de uso (UI → Facade → Dominio → Infraestructura)
 ├── tests/                   # pruebas (pytest)
 ├── docs/                    # documentación detallada (requerimientos, desacople, manual, funciones)
 ├── scripts/                 # código permanente y reutilizable
@@ -193,6 +194,7 @@ git push
 | Fecha    | Decisión | Motivo |
 |----------|----------|--------|
 | 2026-10-09 | Adoptar `CONSTITUTION.md` como fuente única de verdad | Claridad legal y operativa |
+| 2026-10-09 | Crear `OperadoresFacade` en `src/certificado_operadores/facade.py` | Cumplir la regla Facade: la UI no accede directamente a la base de datos |
 
 ## 10. Notas y tareas pendientes
 
