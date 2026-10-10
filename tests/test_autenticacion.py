@@ -215,6 +215,79 @@ def test_repositorio_obtener_para_autenticacion_inexistente(motor_sqlite: Engine
     assert credenciales is None
 
 
+# --- Inicialización resiliente (spec 012) ------------------------------------
+def test_usuarios_repository_auto_crea_tablas_y_admin_en_motor_vacio() -> None:
+    """CA-01/CA-02: en un motor vacío se crean las tablas y se siembra ``admin``."""
+    # Arrange
+    motor = create_engine("sqlite:///:memory:")
+
+    # Act
+    repositorio = UsuariosRepository(engine=motor)
+    administrador = repositorio.obtener_usuario("admin")
+
+    # Assert
+    assert administrador is not None
+    assert administrador.usuario == "admin"
+    assert administrador.rol == ROL_SUPER_ADMINISTRADOR
+    assert administrador.estado == ESTADO_ACTIVO
+    with motor.connect() as conexion:
+        tablas = {
+            fila[0]
+            for fila in conexion.execute(
+                text("SELECT name FROM sqlite_master WHERE type = 'table'")
+            )
+        }
+    assert "dim_usuarios" in tablas
+    assert "log_auditoria" in tablas
+
+
+def test_fachada_autentica_admin_sembrado_en_motor_vacio() -> None:
+    """CA-03/RF-04: la fachada autentica al ``admin`` sembrado sobre un motor nuevo."""
+    # Arrange
+    motor = create_engine("sqlite:///:memory:")
+
+    # Act
+    fachada = UsuariosFacade(engine=motor)
+    resultado = fachada.autenticar("admin", "admin123")
+
+    # Assert
+    assert isinstance(resultado, ResultadoAutenticacion)
+    assert resultado.exito is True
+    assert resultado.mensaje == MENSAJE_LOGIN_EXITOSO
+    assert resultado.rol == ROL_SUPER_ADMINISTRADOR
+
+
+def test_asegurar_tablas_es_idempotente() -> None:
+    """RNF-02: invocar ``asegurar_tablas`` varias veces no duplica al administrador."""
+    # Arrange
+    motor = create_engine("sqlite:///:memory:")
+    repositorio = UsuariosRepository(engine=motor)
+
+    # Act
+    repositorio.asegurar_tablas()
+    repositorio.asegurar_tablas()
+
+    # Assert
+    with motor.connect() as conexion:
+        total = conexion.execute(text("SELECT COUNT(*) FROM dim_usuarios")).scalar_one()
+    assert int(total) == 1
+
+
+def test_log_auditoria_operativo_en_motor_vacio() -> None:
+    """RF-03: la tabla ``log_auditoria`` creada automáticamente admite escrituras."""
+    # Arrange
+    motor = create_engine("sqlite:///:memory:")
+    repositorio = UsuariosRepository(engine=motor)
+
+    # Act
+    repositorio.registrar_auditoria("admin", "Prueba", "detalle de prueba")
+
+    # Assert
+    with motor.connect() as conexion:
+        total = conexion.execute(text("SELECT COUNT(*) FROM log_auditoria")).scalar_one()
+    assert int(total) == 1
+
+
 # --- Criterios de aceptación verificables ------------------------------------
 def test_inicio_no_importa_base_de_datos_ni_criptografia() -> None:
     """CA-02/RNF-01: ``Inicio.py`` no accede a la BD ni a la criptografía."""

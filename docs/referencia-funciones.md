@@ -148,8 +148,9 @@ los mensajes `MENSAJE_*` (incluidos `MENSAJE_LOGIN_EXITOSO`,
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
-| `UsuariosRepository.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa el repositorio inyectando el motor. | — |
+| `UsuariosRepository.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa el repositorio inyectando el motor y asegura las tablas. | — |
 | `UsuariosRepository.motor` | `propiedad -> Engine` | Motor SQLAlchemy (inyectado o resuelto de `db.get_engine`). | `Engine` |
+| `UsuariosRepository.asegurar_tablas` | `() -> None` | RF-01..RF-03: crea `dim_usuarios` y `log_auditoria` y siembra `admin` si la tabla está vacía. | — |
 | `UsuariosRepository.listar_usuarios` | `() -> list[UsuarioInfo]` | Lista las cuentas ordenadas por id. | `list[UsuarioInfo]` |
 | `UsuariosRepository.obtener_usuario` | `(usuario: str) -> UsuarioInfo \| None` | Consulta una cuenta por su nombre. | `UsuarioInfo` o `None` |
 | `UsuariosRepository.obtener_para_autenticacion` | `(usuario: str) -> CredencialesUsuario \| None` | RF-01: consulta las credenciales seguras (hash, rol y estado) para el login. | `CredencialesUsuario` o `None` |
@@ -159,6 +160,10 @@ los mensajes `MENSAJE_*` (incluidos `MENSAJE_LOGIN_EXITOSO`,
 | `UsuariosRepository.registrar_auditoria` | `(usuario, accion, detalles) -> None` | Registra una acción en `log_auditoria`. | — |
 | `_mapear_usuario` | `(fila: RowMapping) -> UsuarioInfo` | Mapea una fila de `dim_usuarios` al DTO. | `UsuarioInfo` |
 | `_mapear_credenciales` | `(fila: RowMapping) -> CredencialesUsuario` | Mapea una fila de credenciales al DTO. | `CredencialesUsuario` |
+
+Constantes de auto-aprovisionamiento (spec 012): `USUARIO_ADMIN_POR_DEFECTO`,
+`CONTRASENA_ADMIN_POR_DEFECTO` y las sentencias DDL `_SQL_CREAR_TABLA_USUARIOS`,
+`_SQL_CREAR_TABLA_LOGS` y `_SQL_CONTEO_USUARIOS`.
 
 ### Módulo `facade_usuarios` — `src/certificado_operadores/facade_usuarios.py`
 
@@ -220,10 +225,14 @@ importar el paquete `certificado_operadores` desde la app.
 - **Cobertura:** `UsuariosFacade.autenticar` contra SQLite temporal (éxito RF-01
   con rol, contraseña incorrecta RF-04, usuario inexistente RF-02 e inactivo
   RF-03, campos obligatorios, verificador inyectado); método
-  `UsuariosRepository.obtener_para_autenticacion` (DTO y `None`); y criterios
-  estáticos de `Inicio.py` (sin SQL ni acceso directo a la BD ni criptografía
-  CA-02/RNF-01, delegación en `UsuariosFacade` CA-01/CA-02, persistencia de la
-  sesión solo tras el éxito y compilación sin errores de sintaxis). Patrón AAA.
+  `UsuariosRepository.obtener_para_autenticacion` (DTO y `None`); inicialización
+  resiliente (spec 012: creación automática de `dim_usuarios` y `log_auditoria`
+  con siembra de `admin` en un motor en blanco, autenticación del `admin`
+  sembrado, idempotencia de `asegurar_tablas` y escritura en `log_auditoria`);
+  y criterios estáticos de `Inicio.py` (sin SQL ni acceso directo a la BD ni
+  criptografía CA-02/RNF-01, delegación en `UsuariosFacade` CA-01/CA-02,
+  persistencia de la sesión solo tras el éxito y compilación sin errores de
+  sintaxis). Patrón AAA.
 
 ### Módulo `infra.backup_service` — `src/certificado_operadores/infra/backup_service.py`
 

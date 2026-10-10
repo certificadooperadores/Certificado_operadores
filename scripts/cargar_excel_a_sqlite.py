@@ -35,8 +35,8 @@ def cargar_csv(tabla_nombre, csv_path):
 def main():
     print(f"Iniciando carga de datos hacia SQLite: {DB_PATH}")
     
-    # Asumimos que los CSVs ya fueron generados por los scripts de modelo estrella
-    csv_dir = os.path.join(BASE_DIR, "version_1", "Proyecto_BD_operadores", "Modelo_Estrella_Final_CSVs")
+    # Insumos vigentes: los CSVs del modelo estrella viven en data/
+    csv_dir = os.path.join(BASE_DIR, "data", "Modelo_Estrella_Final_CSVs")
     
     tablas = [
         ("dim_vigencia_registro", "dim_vigencia_registro.csv"),

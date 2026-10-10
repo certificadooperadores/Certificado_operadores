@@ -17,10 +17,24 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 
-from certificado_operadores.domain.usuarios import CredencialesUsuario, UsuarioInfo
+from certificado_operadores.domain.usuarios import (
+    ESTADO_ACTIVO,
+    ROL_SUPER_ADMINISTRADOR,
+    CredencialesUsuario,
+    UsuarioInfo,
+)
+from certificado_operadores.infra.seguridad import hashear_contrasena
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine, RowMapping
+
+
+# --- Inicialización resiliente de la base de datos (spec 012) ----------------
+USUARIO_ADMIN_POR_DEFECTO = "admin"
+"""Nombre del usuario administrador que se siembra cuando la tabla está vacía."""
+
+CONTRASENA_ADMIN_POR_DEFECTO = "admin123"
+"""Contraseña inicial del administrador; se hashea con bcrypt antes de guardarse."""
 
 
 # --- Consultas SQL (parámetros enlazados, sin concatenar datos) -------------
@@ -82,6 +96,34 @@ _SQL_AUDITORIA = text(
     """
 )
 
+# --- DDL de auto-aprovisionamiento (idempotente, spec 012) -------------------
+_SQL_CREAR_TABLA_USUARIOS = text(
+    """
+    CREATE TABLE IF NOT EXISTS dim_usuarios (
+        id_usuario INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario TEXT UNIQUE NOT NULL,
+        password_hash TEXT NOT NULL,
+        rol TEXT NOT NULL,
+        estado TEXT NOT NULL,
+        fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """
+)
+
+_SQL_CREAR_TABLA_LOGS = text(
+    """
+    CREATE TABLE IF NOT EXISTS log_auditoria (
+        id_log INTEGER PRIMARY KEY AUTOINCREMENT,
+        usuario TEXT NOT NULL,
+        accion TEXT NOT NULL,
+        detalles TEXT,
+        fecha_registro TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+    """
+)
+
+_SQL_CONTEO_USUARIOS = text("SELECT COUNT(*) FROM dim_usuarios")
+
 
 def _mapear_usuario(fila: RowMapping) -> UsuarioInfo:
     """Mapea una fila de ``dim_usuarios`` al DTO de dominio.
@@ -135,6 +177,8 @@ class UsuariosRepository:
                 perezosa con el motor local configurado en ``db``.
         """
         self._engine = engine
+        # Auto-aprovisionamiento (spec 012): deja la base lista antes del primer uso.
+        self.asegurar_tablas()
 
     @property
     def motor(self) -> Engine:
@@ -145,6 +189,32 @@ class UsuariosRepository:
 
             self._engine = get_engine()
         return self._engine
+
+    def asegurar_tablas(self) -> None:
+        """Crea las tablas de usuarios y auditoría y siembra el administrador.
+
+        Operación idempotente que garantiza que ``dim_usuarios`` y
+        ``log_auditoria`` existan antes de cualquier consulta (RF-01 y RF-03 de
+        la spec 012). Si la tabla de usuarios no tiene registros, inserta al
+        usuario ``admin`` con la contraseña hasheada con bcrypt, rol
+        ``Super Administrador`` y estado ``Activo`` (RF-02). Se invoca al
+        construir el repositorio para que la aplicación arranque incluso si la
+        base de datos es nueva.
+        """
+        with self.motor.begin() as conexion:
+            conexion.execute(_SQL_CREAR_TABLA_USUARIOS)
+            conexion.execute(_SQL_CREAR_TABLA_LOGS)
+            total = conexion.execute(_SQL_CONTEO_USUARIOS).scalar_one()
+            if int(total) == 0:
+                conexion.execute(
+                    _SQL_CREAR,
+                    {
+                        "usuario": USUARIO_ADMIN_POR_DEFECTO,
+                        "password_hash": hashear_contrasena(CONTRASENA_ADMIN_POR_DEFECTO),
+                        "rol": ROL_SUPER_ADMINISTRADOR,
+                        "estado": ESTADO_ACTIVO,
+                    },
+                )
 
     def listar_usuarios(self) -> list[UsuarioInfo]:
         """Lista todas las cuentas de usuario ordenadas por identificador.
