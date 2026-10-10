@@ -2,7 +2,7 @@
 
 | Campo     | Valor                                              |
 |-----------|----------------------------------------------------|
-| Estado    | aprobada                                           |
+| Estado    | implementada                                       |
 | Autor     | Ing. Miguel Angel Ortiz Roldan                     |
 | Fecha     | 2026-10-09                                         |
 | Rama      | `main`                                             |

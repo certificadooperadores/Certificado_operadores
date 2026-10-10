@@ -1,6 +1,6 @@
 {
     "project_dir": ".",
-    "spec": "docs/specs/001-spec.md",
+    "spec": "docs/specs/002-spec.md",
     "temp_dir": "temp_agent",
     "gate": {
         "command": [
@@ -21,13 +21,6 @@
             "json"
         ],
         "prompt_file": "C:\\Users\\maortiz\\.gemini\\config\\skills\\agent-orchestrator\\assets\\prompts\\desarrollador.md"
-    },
-    "verifier": {
-        "command": [
-            "gemini",
-            "-p"
-        ],
-        "prompt_file": "C:\\Users\\maortiz\\.gemini\\config\\skills\\agent-orchestrator\\assets\\prompts\\verificador.md"
     },
     "max_iterations": 5,
     "commit_prefix": "chore(ciclo-agentes)"
