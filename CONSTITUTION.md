@@ -236,6 +236,7 @@ git push
 | 2026-10-09 | Extraer la gestión de certificados a `modulos/gestion_certificados/ui.py` con `CertificadosRepository`, deprecar `modulos/6_Gestion_Certificados.py` y eliminar el `exec` de la pestaña 2 de `pages/2_Administracion_Operadores.py` | Cumplir la spec 008: cero SQL en la vista, registro individual y masivo desacoplados y encapsulados en el repositorio |
 | 2026-10-09 | Extraer el reporte de comportamientos a `modulos/reporte_comportamientos/ui.py` con `ComportamientosRepository` y eliminar el último `exec` de `pages/2_Administracion_Operadores.py` | Cumplir la spec 009: cero SQL en la vista (registro individual, carga masiva y reincidencia) y cierre de la Fase 2, con la página 100% libre de `exec` |
 | 2026-10-09 | Extraer reportes y exportaciones a `modulos/reportes/ui.py` con `ReportesRepository` y eliminar el último `exec` de `pages/3_Reportes.py` | Cumplir la spec 010: cero SQL en la vista, consultas y exportaciones encapsuladas en la infraestructura y cierre de la Fase 3 (todas las páginas maestras desacopladas) |
+| 2026-10-09 | Extraer el login de `Inicio.py` a `UsuariosFacade.autenticar()` con el DTO `ResultadoAutenticacion`, las credenciales `CredencialesUsuario` y `UsuariosRepository.obtener_para_autenticacion()` | Cumplir la spec 011: el punto de entrada queda 100% libre de SQL y de dependencias criptográficas directas (`UI → Facade → Dominio → Infraestructura`) |
 
 ## 10. Notas y tareas pendientes
 

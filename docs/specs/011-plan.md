@@ -1,4 +1,4 @@
-# Plan 011 — Refactorización UI: Reporte Comportamientos
+# Plan 011 — Desacoplamiento de Autenticación y Login en Inicio.py
 
 | Campo  | Valor                          |
 |--------|--------------------------------|

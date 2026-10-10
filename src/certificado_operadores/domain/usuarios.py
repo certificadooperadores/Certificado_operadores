@@ -1,8 +1,10 @@
 """Modelos y reglas de negocio del dominio de usuarios del sistema.
 
-Capa de **dominio**: define el DTO :class:`UsuarioInfo`, las constantes de roles
-y estados, los mensajes de resultado y las reglas puras de autorización sobre
-las cuentas. No conoce SQLAlchemy, la base de datos ni la interfaz gráfica:
+Capa de **dominio**: define los DTO :class:`UsuarioInfo`,
+:class:`CredencialesUsuario` y :class:`ResultadoAutenticacion`, las constantes de
+roles y estados, los mensajes de resultado (incluidos los del inicio de sesión) y
+las reglas puras de autorización sobre las cuentas. No conoce SQLAlchemy, la base
+de datos ni la interfaz gráfica:
 
     UI → Facade → Dominio → Infraestructura
 
@@ -48,6 +50,16 @@ MENSAJE_SIN_PERMISO_SUPER_ADMIN = (
 )
 MENSAJE_NO_INACTIVAR_PROPIO = "No puedes inactivar tu propio usuario."
 
+# --- Mensajes de autenticación (inicio de sesión) ---------------------------
+MENSAJE_LOGIN_EXITOSO = "Inicio de sesión exitoso."
+"""Mensaje devuelto cuando las credenciales son válidas y la cuenta está activa."""
+
+MENSAJE_USUARIO_INACTIVO = "El usuario está inactivo."
+"""Mensaje devuelto cuando la cuenta existe pero no está habilitada."""
+
+MENSAJE_CONTRASENA_INCORRECTA = "Contraseña incorrecta."
+"""Mensaje devuelto cuando la contraseña no coincide con el hash almacenado."""
+
 
 @dataclass(frozen=True)
 class UsuarioInfo:
@@ -66,6 +78,36 @@ class ResultadoOperacion:
 
     exito: bool
     mensaje: str
+
+
+@dataclass(frozen=True)
+class CredencialesUsuario:
+    """Credenciales de una cuenta necesarias para validar el inicio de sesión.
+
+    Se mantiene separado de :class:`UsuarioInfo` porque incluye el
+    ``password_hash`` (dato sensible) y solo lo consume la capa de autenticación,
+    nunca la vista.
+    """
+
+    usuario: str
+    password_hash: str
+    rol: str
+    estado: str
+
+
+@dataclass(frozen=True)
+class ResultadoAutenticacion:
+    """Resultado de intentar autenticar una cuenta del sistema.
+
+    Attributes:
+        exito: ``True`` si las credenciales son válidas y la cuenta está activa.
+        mensaje: Mensaje listo para mostrar en la interfaz.
+        rol: Rol de la cuenta autenticada; vacío si la autenticación falló.
+    """
+
+    exito: bool
+    mensaje: str
+    rol: str = ""
 
 
 def roles_asignables(rol_solicitante: str) -> tuple[str, ...]:

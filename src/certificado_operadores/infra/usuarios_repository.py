@@ -17,7 +17,7 @@ from typing import TYPE_CHECKING
 
 from sqlalchemy import text
 
-from certificado_operadores.domain.usuarios import UsuarioInfo
+from certificado_operadores.domain.usuarios import CredencialesUsuario, UsuarioInfo
 
 if TYPE_CHECKING:
     from sqlalchemy.engine import Engine, RowMapping
@@ -41,6 +41,16 @@ _SQL_OBTENER = text(
 )
 
 _SQL_EXISTE = text("SELECT COUNT(*) FROM dim_usuarios WHERE usuario = :usuario")
+
+# Consulta de credenciales: incluye el hash (dato sensible) solo para la capa de
+# autenticación; nunca se devuelve a la vista como ``UsuarioInfo``.
+_SQL_CREDENCIALES = text(
+    """
+    SELECT usuario, password_hash, rol, estado
+    FROM dim_usuarios
+    WHERE usuario = :usuario
+    """
+)
 
 _SQL_CREAR = text(
     """
@@ -88,6 +98,24 @@ def _mapear_usuario(fila: RowMapping) -> UsuarioInfo:
         rol=str(fila["rol"]),
         estado=str(fila["estado"]),
         fecha_registro=str(fila["fecha_registro"] or ""),
+    )
+
+
+def _mapear_credenciales(fila: RowMapping) -> CredencialesUsuario:
+    """Mapea una fila de credenciales al DTO de dominio.
+
+    Args:
+        fila: Fila devuelta por SQLAlchemy con ``usuario``, ``password_hash``,
+            ``rol`` y ``estado``.
+
+    Returns:
+        El :class:`CredencialesUsuario` construido a partir de la fila.
+    """
+    return CredencialesUsuario(
+        usuario=str(fila["usuario"]),
+        password_hash=str(fila["password_hash"]),
+        rol=str(fila["rol"]),
+        estado=str(fila["estado"]),
     )
 
 
@@ -140,6 +168,24 @@ class UsuariosRepository:
         with self.motor.connect() as conexion:
             fila = conexion.execute(_SQL_OBTENER, {"usuario": usuario}).mappings().first()
         return None if fila is None else _mapear_usuario(fila)
+
+    def obtener_para_autenticacion(self, usuario: str) -> CredencialesUsuario | None:
+        """Consulta las credenciales de una cuenta para validar el inicio de sesión.
+
+        Consulta parametrizada y de solo lectura que devuelve el hash y el estado
+        necesarios para autenticar; la comparación de la contraseña ocurre en la
+        capa de seguridad (``bcrypt``), nunca aquí.
+
+        Args:
+            usuario: Nombre de usuario a buscar.
+
+        Returns:
+            El :class:`CredencialesUsuario` correspondiente, o ``None`` si la
+            cuenta no existe.
+        """
+        with self.motor.connect() as conexion:
+            fila = conexion.execute(_SQL_CREDENCIALES, {"usuario": usuario}).mappings().first()
+        return None if fila is None else _mapear_credenciales(fila)
 
     def existe_usuario(self, usuario: str) -> bool:
         """Indica si una cuenta con ese nombre ya existe.

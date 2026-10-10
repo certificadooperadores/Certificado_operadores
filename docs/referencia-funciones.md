@@ -121,7 +121,8 @@ Punto de entrada: `src/certificado_operadores/pages/2_Administracion_Operadores.
 
 ### Módulo `domain.usuarios` — `src/certificado_operadores/domain/usuarios.py`
 
-Reglas puras de autorización y DTO de cuenta (spec 004).
+Reglas puras de autorización y DTO de cuenta (spec 004); incluye los DTO y los
+mensajes del inicio de sesión (spec 011).
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
@@ -129,9 +130,12 @@ Reglas puras de autorización y DTO de cuenta (spec 004).
 | `puede_modificar_usuario` | `(rol_solicitante: str, rol_objetivo: str) -> bool` | Indica si puede modificar una cuenta con ese rol. | `bool` |
 | `puede_inactivar_usuario` | `(usuario_solicitante: str, usuario_objetivo: str, estado_nuevo: str) -> bool` | Impide inactivar la propia cuenta. | `bool` |
 
-DTOs: `UsuarioInfo`, `ResultadoOperacion`. Constantes: `ROL_SUPER_ADMINISTRADOR`,
-`ROL_ADMINISTRADOR`, `ROL_GESTOR`, `ROLES_ASIGNABLES_BASE`, `ESTADO_ACTIVO`,
-`ESTADO_INACTIVO`, `ESTADOS_USUARIO` y los mensajes `MENSAJE_*`.
+DTOs: `UsuarioInfo`, `ResultadoOperacion`, `CredencialesUsuario` (hash, rol y
+estado para autenticar) y `ResultadoAutenticacion` (`exito`, `mensaje`, `rol`).
+Constantes: `ROL_SUPER_ADMINISTRADOR`, `ROL_ADMINISTRADOR`, `ROL_GESTOR`,
+`ROLES_ASIGNABLES_BASE`, `ESTADO_ACTIVO`, `ESTADO_INACTIVO`, `ESTADOS_USUARIO` y
+los mensajes `MENSAJE_*` (incluidos `MENSAJE_LOGIN_EXITOSO`,
+`MENSAJE_USUARIO_INACTIVO` y `MENSAJE_CONTRASENA_INCORRECTA`).
 
 ### Módulo `infra.seguridad` — `src/certificado_operadores/infra/seguridad.py`
 
@@ -148,20 +152,23 @@ DTOs: `UsuarioInfo`, `ResultadoOperacion`. Constantes: `ROL_SUPER_ADMINISTRADOR`
 | `UsuariosRepository.motor` | `propiedad -> Engine` | Motor SQLAlchemy (inyectado o resuelto de `db.get_engine`). | `Engine` |
 | `UsuariosRepository.listar_usuarios` | `() -> list[UsuarioInfo]` | Lista las cuentas ordenadas por id. | `list[UsuarioInfo]` |
 | `UsuariosRepository.obtener_usuario` | `(usuario: str) -> UsuarioInfo \| None` | Consulta una cuenta por su nombre. | `UsuarioInfo` o `None` |
+| `UsuariosRepository.obtener_para_autenticacion` | `(usuario: str) -> CredencialesUsuario \| None` | RF-01: consulta las credenciales seguras (hash, rol y estado) para el login. | `CredencialesUsuario` o `None` |
 | `UsuariosRepository.existe_usuario` | `(usuario: str) -> bool` | Indica si la cuenta ya existe. | `bool` |
 | `UsuariosRepository.crear_usuario` | `(usuario, password_hash, rol, estado) -> None` | Inserta una cuenta nueva. | — |
 | `UsuariosRepository.actualizar_usuario` | `(usuario, rol, estado, password_hash=None) -> None` | Actualiza rol, estado y contraseña opcional. | — |
 | `UsuariosRepository.registrar_auditoria` | `(usuario, accion, detalles) -> None` | Registra una acción en `log_auditoria`. | — |
 | `_mapear_usuario` | `(fila: RowMapping) -> UsuarioInfo` | Mapea una fila de `dim_usuarios` al DTO. | `UsuarioInfo` |
+| `_mapear_credenciales` | `(fila: RowMapping) -> CredencialesUsuario` | Mapea una fila de credenciales al DTO. | `CredencialesUsuario` |
 
 ### Módulo `facade_usuarios` — `src/certificado_operadores/facade_usuarios.py`
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
-| `UsuariosFacade.__init__` | `(engine=None, hasheador=hashear_contrasena) -> None` | Inicializa la fachada con motor y hasheador inyectables. | — |
+| `UsuariosFacade.__init__` | `(engine=None, hasheador=hashear_contrasena, verificador=verificar_contrasena) -> None` | Inicializa la fachada con motor, hasheador y verificador inyectables. | — |
 | `UsuariosFacade.motor` | `propiedad -> Engine` | Motor SQLAlchemy delegado al repositorio. | `Engine` |
 | `UsuariosFacade.listar_usuarios` | `() -> list[UsuarioInfo]` | RF-01: lista las cuentas del sistema. | `list[UsuarioInfo]` |
 | `UsuariosFacade.obtener_usuario` | `(usuario: str) -> UsuarioInfo \| None` | Consulta una cuenta por su nombre. | `UsuarioInfo` o `None` |
+| `UsuariosFacade.autenticar` | `(usuario: str, contrasena: str) -> ResultadoAutenticacion` | RF-01..RF-04: valida credenciales, estado activo y contraseña contra el hash. | `ResultadoAutenticacion` |
 | `UsuariosFacade.crear_usuario` | `(usuario, contrasena, rol, *, usuario_solicitante="") -> ResultadoOperacion` | RF-02: valida existencia, hashea con bcrypt y crea. | `ResultadoOperacion` |
 | `UsuariosFacade.modificar_usuario` | `(usuario, rol, estado, contrasena=None, *, rol_solicitante="", usuario_solicitante="") -> ResultadoOperacion` | RF-03: aplica permisos y actualiza la cuenta. | `ResultadoOperacion` |
 
@@ -196,6 +203,27 @@ Constante: `AYUDA_CONTRASENA_OPCIONAL`. Punto de entrada:
   `nombres_usuarios`); y criterios de aceptación estáticos (paquete CA-01, sin
   SQL en la UI CA-03/RNF-01, página con `render_gestion_usuarios` y sin `exec`
   CA-02/RNF-02). Patrón AAA.
+
+### Punto de entrada `Inicio.py` — `src/certificado_operadores/Inicio.py`
+
+Punto de entrada de Streamlit (spec 011). Captura las credenciales del
+formulario de login y delega la autenticación en
+`UsuariosFacade.autenticar(usuario, contrasena)`; no contiene sentencias SQL ni
+importa controladores de base de datos o librerías criptográficas (RNF-01).
+Solo tras un resultado exitoso persiste `logged_in`, `usuario` y `rol` en
+`st.session_state`. No define funciones propias; el ajuste de `sys.path` permite
+importar el paquete `certificado_operadores` desde la app.
+
+### Módulo `Inicio.py` — pruebas
+
+- **Ubicación:** `tests/test_autenticacion.py`
+- **Cobertura:** `UsuariosFacade.autenticar` contra SQLite temporal (éxito RF-01
+  con rol, contraseña incorrecta RF-04, usuario inexistente RF-02 e inactivo
+  RF-03, campos obligatorios, verificador inyectado); método
+  `UsuariosRepository.obtener_para_autenticacion` (DTO y `None`); y criterios
+  estáticos de `Inicio.py` (sin SQL ni acceso directo a la BD ni criptografía
+  CA-02/RNF-01, delegación en `UsuariosFacade` CA-01/CA-02, persistencia de la
+  sesión solo tras el éxito y compilación sin errores de sintaxis). Patrón AAA.
 
 ### Módulo `infra.backup_service` — `src/certificado_operadores/infra/backup_service.py`
 

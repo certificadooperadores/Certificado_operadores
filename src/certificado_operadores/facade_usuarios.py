@@ -1,7 +1,7 @@
 """Fachada de casos de uso de usuarios (patrón Facade).
 
-Expone las operaciones de lectura y mutación de cuentas —listar, crear y
-modificar— delegando toda la persistencia en
+Expone las operaciones de lectura y mutación de cuentas —listar, autenticar,
+crear y modificar— delegando toda la persistencia en
 :class:`~certificado_operadores.infra.usuarios_repository.UsuariosRepository` y
 aplicando las reglas puras del dominio. La UI (incluida Streamlit) debe invocar
 **únicamente** esta fachada:
@@ -21,18 +21,22 @@ from typing import TYPE_CHECKING
 from certificado_operadores.domain.usuarios import (
     ESTADO_ACTIVO,
     MENSAJE_CAMPOS_OBLIGATORIOS,
+    MENSAJE_CONTRASENA_INCORRECTA,
+    MENSAJE_LOGIN_EXITOSO,
     MENSAJE_NO_INACTIVAR_PROPIO,
     MENSAJE_SIN_PERMISO_SUPER_ADMIN,
     MENSAJE_USUARIO_ACTUALIZADO,
     MENSAJE_USUARIO_CREADO,
     MENSAJE_USUARIO_EXISTE,
+    MENSAJE_USUARIO_INACTIVO,
     MENSAJE_USUARIO_NO_EXISTE,
+    ResultadoAutenticacion,
     ResultadoOperacion,
     UsuarioInfo,
     puede_inactivar_usuario,
     puede_modificar_usuario,
 )
-from certificado_operadores.infra.seguridad import hashear_contrasena
+from certificado_operadores.infra.seguridad import hashear_contrasena, verificar_contrasena
 from certificado_operadores.infra.usuarios_repository import UsuariosRepository
 
 if TYPE_CHECKING:
@@ -53,6 +57,7 @@ class UsuariosFacade:
         self,
         engine: Engine | None = None,
         hasheador: Callable[[str], str] = hashear_contrasena,
+        verificador: Callable[[str, str], bool] = verificar_contrasena,
     ) -> None:
         """Inicializa la fachada.
 
@@ -61,9 +66,13 @@ class UsuariosFacade:
                 perezosa con el motor local configurado en ``db``.
             hasheador: Función que convierte una contraseña en texto plano a su
                 hash. Por defecto usa ``bcrypt``.
+            verificador: Función que compara una contraseña en texto plano con un
+                hash almacenado. Por defecto usa ``bcrypt``; se inyecta para
+                facilitar las pruebas.
         """
         self._repositorio = UsuariosRepository(engine)
         self._hasheador = hasheador
+        self._verificador = verificador
 
     @property
     def motor(self) -> Engine:
@@ -88,6 +97,35 @@ class UsuariosFacade:
             El :class:`UsuarioInfo` correspondiente, o ``None`` si no existe.
         """
         return self._repositorio.obtener_usuario(usuario)
+
+    def autenticar(self, usuario: str, contrasena: str) -> ResultadoAutenticacion:
+        """Autentica una cuenta a partir de sus credenciales.
+
+        Orquesta el caso de uso de inicio de sesión: valida los campos
+        obligatorios, recupera las credenciales seguras del repositorio, verifica
+        que la cuenta esté activa y compara la contraseña con el hash almacenado
+        mediante la capa de seguridad. No expone el hash ni ejecuta SQL.
+
+        Args:
+            usuario: Nombre de usuario ingresado.
+            contrasena: Contraseña en texto plano ingresada.
+
+        Returns:
+            El :class:`ResultadoAutenticacion`; ``exito`` es ``True`` solo si la
+            cuenta existe, está activa y la contraseña coincide. En ese caso,
+            ``rol`` contiene el rol de la cuenta autenticada.
+        """
+        if not usuario or not contrasena:
+            return ResultadoAutenticacion(False, MENSAJE_CAMPOS_OBLIGATORIOS)
+
+        credenciales = self._repositorio.obtener_para_autenticacion(usuario)
+        if credenciales is None:
+            return ResultadoAutenticacion(False, MENSAJE_USUARIO_NO_EXISTE)
+        if credenciales.estado != ESTADO_ACTIVO:
+            return ResultadoAutenticacion(False, MENSAJE_USUARIO_INACTIVO)
+        if not self._verificador(contrasena, credenciales.password_hash):
+            return ResultadoAutenticacion(False, MENSAJE_CONTRASENA_INCORRECTA)
+        return ResultadoAutenticacion(True, MENSAJE_LOGIN_EXITOSO, credenciales.rol)
 
     def crear_usuario(
         self, usuario: str, contrasena: str, rol: str, *, usuario_solicitante: str = ""

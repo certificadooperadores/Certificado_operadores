@@ -1,4 +1,4 @@
-# Tareas 011 — Refactorización UI: Reporte Comportamientos
+# Tareas 011 — Desacoplamiento de Autenticación y Login en Inicio.py
 
 | Campo  | Valor                          |
 |--------|--------------------------------|
@@ -10,28 +10,28 @@
 
 - [x] **T-01** — Escribir especificación técnica, plan y tareas.
   - Estado: hecho
-- [ ] **T-02** — Extender dominio (`domain/usuarios.py`) y repositorio (`infra/usuarios_repository.py`) para credenciales.
+- [x] **T-02** — Extender dominio (`domain/usuarios.py`) y repositorio (`infra/usuarios_repository.py`) para credenciales.
   - Criterio de aceptación: DTO `ResultadoAutenticacion` y consulta segura de credenciales disponibles.
-  - Estado: pendiente
-- [ ] **T-03** — Implementar `autenticar()` en `UsuariosFacade`.
+  - Estado: hecho (`ResultadoAutenticacion`, `CredencialesUsuario` y `obtener_para_autenticacion`).
+- [x] **T-03** — Implementar `autenticar()` en `UsuariosFacade`.
   - Criterio de aceptación: Validación de usuario, estado activo y comprobación con `verificar_contrasena`.
-  - Estado: pendiente
-- [ ] **T-04** — Refactorizar `Inicio.py`.
+  - Estado: hecho.
+- [x] **T-04** — Refactorizar `Inicio.py`.
   - Criterio de aceptación: Elimina `run_query` y `bcrypt`; invoca `UsuariosFacade().autenticar()`.
-  - Estado: pendiente
-- [ ] **T-05** — Pruebas unitarias en `tests/test_autenticacion.py`.
+  - Estado: hecho.
+- [x] **T-05** — Pruebas unitarias en `tests/test_autenticacion.py`.
   - Criterio de aceptación: `make test` pasa 100% en verde con todos los casos de login cubiertos.
-  - Estado: pendiente
+  - Estado: hecho (225 pruebas en verde; `tests/test_autenticacion.py` con 13 casos).
 
 ## Progreso
 
 | Tarea | Estado | Commit |
 |-------|--------|--------|
 | T-01  | hecho  | N/A    |
-| T-02  | pendiente |        |
-| T-03  | pendiente |        |
-| T-04  | pendiente |        |
-| T-05  | pendiente |        |
+| T-02  | hecho  |        |
+| T-03  | hecho  |        |
+| T-04  | hecho  |        |
+| T-05  | hecho  |        |
 
 ---
 
