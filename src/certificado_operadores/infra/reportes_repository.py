@@ -477,7 +477,8 @@ _REPORTES: tuple[_Reporte, ...] = (
             LEFT JOIN dim_codigo c ON f.id_codigo = c.id_codigo
             LEFT JOIN dim_persona p ON c.id_persona = p.id_persona
             LEFT JOIN dim_empresa em ON c.id_empresa = em.id_empresa
-            WHERE 1=1
+            WHERE f.id_codigo IS NOT NULL
+              AND f.id_codigo NOT IN (10000, 20000, 30000, 40000)
         """,
         filtros=(
             _FiltroReporte("empresa", "c.id_empresa", "Empresa"),

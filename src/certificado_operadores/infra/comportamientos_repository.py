@@ -491,6 +491,7 @@ _SQL_REINCIDENCIAS = text(
     LEFT JOIN dim_comportamiento AS c ON r.id_comportamiento = c.id_comportamiento
     LEFT JOIN dim_codigo AS dc ON r.id_codigo = dc.id_codigo
     LEFT JOIN dim_empresa AS e ON dc.id_empresa = e.id_empresa
+    WHERE r.id_codigo NOT IN (10000, 20000, 30000, 40000)
     ORDER BY r.id_reincidencia DESC
     """
 )
@@ -510,6 +511,7 @@ _SQL_DETALLE_REINCIDENCIAS = text(
     LEFT JOIN dim_comportamiento AS c ON r.id_comportamiento = c.id_comportamiento
     LEFT JOIN dim_codigo AS dc ON r.id_codigo = dc.id_codigo
     LEFT JOIN dim_empresa AS e ON dc.id_empresa = e.id_empresa
+    WHERE r.id_codigo NOT IN (10000, 20000, 30000, 40000)
     ORDER BY r.id_reincidencia DESC
     """
 )

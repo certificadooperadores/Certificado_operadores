@@ -940,9 +940,11 @@ no contiene sentencias SQL (RNF-01) ni conoce el esquema. El paquete expone
 | `_render_filtro` | `(filtro_tipo, filtro_etiqueta, defecto, repositorio, definicion) -> Any` | Spec 023: pinta un filtro y devuelve su valor tipado. | `Any` |
 | `_construir_seleccion` | `(definicion: DefinicionReporte, repositorio: ReportesRepository) -> tuple[SeleccionFiltros, bool]` | Spec 023: barra horizontal de filtros y botón. | `tuple` |
 | `_render_kpis` | `(df: pd.DataFrame, definicion: DefinicionReporte) -> None` | Spec 024: tarjetas métricas de negocio (`st.metric`). | — |
+| `_render_graficos_analiticos` | `(df: pd.DataFrame, definicion: DefinicionReporte) -> None` | Visualizaciones interactivas con Altair: distribución de activos por concesionario/tipología, certificados vencidos y cross-filtering tridireccional tipo Power BI (Operador, Causal, Ruta). | — |
+| `_render_gantt_vencimientos_interactivo` | `(df: pd.DataFrame) -> None` | Gráfico de barras apiladas interactivo por quincenas con paleta de criticidad y acceso expandible al Gantt Matplotlib. | — |
 | `_render_exportacion` | `(df: pd.DataFrame, definicion: DefinicionReporte) -> None` | Spec 024: botones Excel/CSV en la cabecera, sobre la tabla. | — |
 | `_render_gantt` | `(df: pd.DataFrame, definicion: DefinicionReporte) -> None` | Spec 024: Gantt solo para reportes de vencimiento. | — |
-| `_render_resultado` | `(df: pd.DataFrame \| None, definicion, repositorio, usuario: str) -> None` | Muestra KPIs, exportación, tabla, Gantt y auditoría. | — |
+| `_render_resultado` | `(df: pd.DataFrame \| None, definicion, repositorio, usuario: str) -> None` | Muestra KPIs, exportación, tabla, gráficos interactivos, Gantt y auditoría. | — |
 | `render_reportes` | `(repositorio: ReportesRepository \| None = None) -> None` | Renderiza la vista completa (punto de entrada de `pages/`). | — |
 
 Constantes: `TITULO`, `SUBTITULO`, `USUARIO_POR_DEFECTO`, `ETIQUETA_EJECUTAR`

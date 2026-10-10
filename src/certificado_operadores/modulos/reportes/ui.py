@@ -645,8 +645,12 @@ def _render_graficos_analiticos(df: pd.DataFrame, definicion: DefinicionReporte)
                 return "Sin Operador Identificado"
             try:
                 cod_int = int(float(cod))
+                if cod_int in (10000, 20000, 30000, 40000):
+                    return "Sin Operador Identificado"
                 return f"{cod_int} - {nom}" if pd.notna(nom) else str(cod_int)
             except (ValueError, TypeError):
+                if str(cod) in ("10000", "20000", "30000", "40000"):
+                    return "Sin Operador Identificado"
                 return f"{cod} - {nom}" if pd.notna(nom) else str(cod)
 
         copia_comp["Operador"] = copia_comp.apply(_formatear_operador, axis=1)
