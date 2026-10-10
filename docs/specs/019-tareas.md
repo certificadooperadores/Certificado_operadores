@@ -5,7 +5,7 @@
 | Spec    | [`019-spec.md`](./019-spec.md)                     |
 | Plan    | [`019-plan.md`](./019-plan.md)                     |
 | Rama    | `feat/columnas-completas-eventos`                  |
-| Estado  | en progreso                                        |
+| Estado  | completado                                         |
 
 ## Lista de tareas
 

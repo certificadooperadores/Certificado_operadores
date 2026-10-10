@@ -5,6 +5,7 @@ Coloca este archivo en ``tests/conftest.py``. pytest lo descubre automáticament
 
 from __future__ import annotations
 
+import os
 import tempfile
 from collections.abc import Iterator
 from pathlib import Path
@@ -12,14 +13,11 @@ from pathlib import Path
 import pytest
 
 # --- Configuración de la sesión de pruebas ----------------------------------
-NOMBRE_DIR_TEMPORAL_PRUEBAS = "certificado-operadores-pytest"
+NOMBRE_DIR_TEMPORAL_PRUEBAS = f"certificado-operadores-pytest-{os.getpid()}"
 """Subcarpeta propia bajo el directorio temporal del sistema para ``tmp_path``.
 
-Se usa un ``basetemp`` fijo (en lugar del directorio numerado por defecto de
-pytest) porque en Windows la limpieza del enlace ``pytest-current`` falla con
-``PermissionError`` al quedar colgando tras eliminar sesiones antiguas. Un
-``basetemp`` explícito evita esa ruta de limpieza y hace que ``uv run pytest``
-termine con código 0.
+Se usa un ``basetemp`` con PID para evitar colisiones y ``PermissionError`` en
+Windows al limpiar sesiones anteriores concurrentes o bloqueadas.
 """
 
 
