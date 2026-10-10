@@ -1,38 +1,17 @@
-# Tareas 012 — Refactorización UI: Reportes
+# Tareas 012 — Inicialización Resiliente de Usuarios y Auditoría en Base de Datos
 
-| Campo  | Valor                          |
-|--------|--------------------------------|
-| Spec   | [`012-spec.md`](./012-spec.md) |
-| Plan   | [`012-plan.md`](./012-plan.md) |
-| Autor  | Ing. Miguel Angel Ortiz Roldan |
+| Campo   | Valor                                              |
+|---------|----------------------------------------------------|
+| Spec    | [`012-spec.md`](./012-spec.md)                     |
+| Plan    | [`012-plan.md`](./012-plan.md)                     |
+| Rama    | `fix/auto-inicializacion-db-usuarios`              |
+| Estado  | en progreso                                        |
 
-## Tareas
+## Lista de tareas
 
-- [x] **T-01** — Escribir especificación técnica, plan y tareas.
-  - Estado: hecho
-- [ ] **T-02** — Actualizar Facade / Repositorio con métodos necesarios.
-  - Criterio de aceptación: La capa de infraestructura soporta los métodos de reportes.
-  - Estado: pendiente
-- [ ] **T-03** — Crear la carpeta `modulos/reportes/` y su archivo `ui.py`.
-  - Criterio de aceptación: Lógica visual extraída, 0% SQL.
-  - Estado: pendiente
-- [ ] **T-04** — Crear página principal en `pages/`.
-  - Criterio de aceptación: Importa `render_page()` desde el nuevo módulo.
-  - Estado: pendiente
-- [ ] **T-05** — Borrar archivo residual de la carpeta heredada `modulos/`.
-  - Criterio de aceptación: `10_Reportes.py` eliminado.
-  - Estado: pendiente
-
-## Progreso
-
-| Tarea | Estado | Commit |
-|-------|--------|--------|
-| T-01  | ✅     | N/A    |
-| T-02  | ⏳     |        |
-| T-03  | ⏳     |        |
-| T-04  | ⏳     |        |
-| T-05  | ⏳     |        |
-
----
-
-**Autor:** Ing. Miguel Angel Ortiz Roldan
+- [ ] **T-01:** Añadir prueba unitaria en `tests/test_autenticacion.py` que compruebe la creación automática de tablas y usuario `admin` en motor en blanco.
+- [ ] **T-02:** Implementar `asegurar_tablas()` en `src/certificado_operadores/infra/usuarios_repository.py` con DDL de `dim_usuarios` y `log_auditoria`, más siembra automática de `admin` si la tabla está vacía.
+- [ ] **T-03:** Invocar `asegurar_tablas()` en el constructor de `UsuariosRepository`.
+- [ ] **T-04:** Actualizar `scripts/cargar_excel_a_sqlite.py` para usar `data/Modelo_Estrella_Final_CSVs`.
+- [ ] **T-05:** Ejecutar `uv run pytest` y confirmar 100% de pruebas en verde.
+- [ ] **T-06:** Actualizar `docs/referencia-funciones.md` con el nuevo método `asegurar_tablas`.
