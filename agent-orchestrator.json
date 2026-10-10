@@ -22,6 +22,7 @@
         ],
         "prompt_file": "C:\\Users\\maortiz\\.gemini\\config\\skills\\agent-orchestrator\\assets\\prompts\\desarrollador.md"
     },
+    "timeout_seconds": 3600,
     "max_iterations": 5,
     "commit_prefix": "chore(ciclo-agentes)"
 }

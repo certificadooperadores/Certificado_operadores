@@ -46,17 +46,23 @@ UI / Streamlit  →  Facade (casos de uso)  →  Dominio  →  Infraestructura
 
 | Contrato | Define | Implementa |
 |----------|--------|------------|
-| <!-- IPuerto --> | | |
+| DTOs y Modelos | `domain/models.py` | N/A (Dataclasses inmutables) |
+| Repositorio Base | `domain/` (Implícitamente) | `infra/repository.py` (SQLAlchemy) |
+| Casos de Uso | `facade.py` | `OperadoresFacade` |
 
 ## 5. Puntos de acoplamiento y su mitigación
 
 | Acoplamiento | Riesgo | Mitigación |
 |--------------|--------|------------|
-| <!-- ... --> | | |
+| UI -> Base de Datos | Consultas SQL rotas por cambios en UI | **Mitigado**: La UI (Streamlit) solo invoca métodos de `OperadoresFacade`. |
+| Facade -> Infra | Facade atado a SQLAlchemy | **Mitigado**: Facade delega todo acceso a datos a `OperadoresRepository`. |
+| Tipado Dinámico | Errores de acceso a diccionarios en UI | **Mitigado**: Uso estricto de `dataclasses` (`OperadorInfo`) en la capa de Dominio. |
 
 ## 6. Decisiones de arquitectura
 
-<!-- Enlaza a docs/adr/ o resume las decisiones clave. -->
+1. **Clean Architecture Ligera:** Se separó la lógica en capas de Dominio (`domain/models.py`), Infraestructura (`infra/repository.py`) y Aplicación (`facade.py`).
+2. **Inyección de Dependencias:** El motor de base de datos se inyecta desde arriba (o perezosamente) para facilitar las pruebas unitarias con SQLite en memoria.
+3. **Patrón Facade:** Las vistas de Streamlit (`views/`) ignoran completamente la existencia de tablas, columnas o consultas SQL; todo pasa por `OperadoresFacade`.
 
 ---
 
