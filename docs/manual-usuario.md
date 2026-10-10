@@ -58,12 +58,12 @@ La plataforma aplica un modelo de control de acceso estricto basado en roles par
 Permite gestionar el ciclo de vida del operador desde su vinculación, asignación de código institucional y datos maestros:
 
 * **Estructura de Códigos por Concesionario (Patrón COT):**
-  Cada empresa operadora cuenta con un rango de código único de 5 dígitos para prevenir solapamientos:
-  * **GIT Masivo (Empresa 1):** Serie `10001` a `19999`
-  * **Blanco y Negro Masivo (Empresa 2):** Serie `20001` a `29999`
-  * **ETM (Empresa 3):** Serie `30001` a `39999`
-  * **Unimetro (Empresa 4):** Serie `40001` a `49999`
-  *(Nota: Los códigos base `10000`, `20000`, `30000` y `40000` corresponden a identificadores genéricos de bitácora sin conductor asociado y no representan operadores reales).*
+  Cada empresa operadora cuenta con un prefijo y rango numérico exclusivo de 5 dígitos para prevenir solapamientos:
+  * **Prefijo 1 — GIT Masivo (Empresa 1):** Serie `10001` a `19999` (Código base bitácora: `10000` = Git Masivo)
+  * **Prefijo 2 — Blanco y Negro Masivo (Empresa 2):** Serie `20001` a `29999` (Código base bitácora: `20000` = Blanco y Negro)
+  * **Prefijo 3 — ETM (Empresa 3):** Serie `30001` a `39999` (Código base bitácora: `30000` = ETM)
+  * **Prefijo 4 — Unimetro (Empresa 4):** Serie `40001` a `49999` (Código base bitácora: `40000` = Unimetro)
+  *(Nota institucional: Los códigos cerrados `10000`, `20000`, `30000` y `40000` identifican a la empresa concesionaria para novedades globales de bitácora cuando no se individualizó al conductor en la vía. Por regla de negocio, se excluyen de los rankings y evaluaciones de operadores individuales para no distorsionar las métricas de personas reales).*
 * **Búsqueda y Ficha del Operador:** Búsqueda inmediata por número de cédula o por código de operación. Muestra nombres completos, género, concesionario, tipología autorizada y vigencia.
 * **Creación y Actualización Segura:** Formulario validado con cálculo automático del siguiente código disponible en la serie del concesionario y verificación de no duplicidad de cédula activa.
 
@@ -79,35 +79,35 @@ Controla los eventos normativos y la vigencia del certificado de idoneidad (3 a�
 
 ---
 
-## 4. Módulo: Reporte de Comportamientos e Infracciones
+## 5. Módulo: Reporte de Comportamientos e Infracciones
 
 Estructurado en tres pestañas operacionales para garantizar orden y agilidad:
 
-### 4.1 Ingreso Individual
+### 5.1 Ingreso Individual
 * Registro rápido de una novedad o infracción de bitácora seleccionando código de operador, fecha, vehículo, viaje, tarea, ruta y detalle del comportamiento.
 
-### 4.2 Carga Masiva (Excel)
+### 5.2 Carga Masiva (Excel)
 * Descarga de plantilla institucional preformateada.
 * Subida de archivos con validación automática antes de guardar: detecta registros duplicados, valida la existencia de códigos de operador y muestra un resumen previo.
 
-### 4.3 Pestaña: Reincidencia de Comportamientos
+### 5.3 Pestaña: Reincidencia de Comportamientos
 * **Evaluación Automatizada:** Botón `🔎 Evaluar Reincidencia` en la cabecera que procesa los impactos y frecuencias según reglas normativas de Metrocali.
 * **Barra de Filtros Horizontal Compacta:**
   * Filtro por **Empresa** concesionaria.
-  * Filtro por **Código** de operador.
+  * Filtro por **Código** de operador (excluyendo automáticamente los códigos genéricos de empresa).
   * Filtro por **Caso** de reincidencia.
-  * Selector de límite de visualización (`Mostrar`: 10, 20, 50 o 100 casos) para evitar listas infinitas en pantalla.
+  * Selector de límite de visualización (`Por página`: 10, 20 o 50 casos) para evitar listas infinitas en pantalla.
 * **Exportación Inmediata:** Botón `⬇️ Exportar Excel` ubicado directamente en la barra superior de herramientas.
 * **Determinación Metrocali:** Menú desplegable por caso para asignar la decisión (`Amonestación`, `Suspensión`, `Capacitación`, etc.), fecha de acción y registro en el historial.
 * **Importación Masiva de Acciones:** Panel expandible opcional `📥 Importar Acciones desde Excel` que no invade el espacio visual principal.
 
 ---
 
-## 5. Módulo: Reportes y Analítica Interactiva
+## 6. Módulo: Reportes y Analítica Interactiva
 
 Panel analítico centralizado con **ancho completo responsivo**, **KPIs de negocio inteligentes** y gráficos interactivos con **Altair**:
 
-### 5.1 Operadores por Empresa y Tipología
+### 6.1 Operadores por Empresa y Tipología
 * **KPIs Directos:**
   * `Total Activos`: Suma total de operadores en servicio.
   * `Articulado`: Total de operadores habilitados para articulado (autoriza articulado, padrón y complementario).
