@@ -28,10 +28,10 @@
 | Tarea | Estado | Commit |
 |-------|--------|--------|
 | T-01  | hecho  | N/A    |
-| T-02  | hecho  |        |
-| T-03  | hecho  |        |
-| T-04  | hecho  |        |
-| T-05  | hecho  |        |
+| T-02  | hecho  | `b243c44` |
+| T-03  | hecho  | `b243c44` |
+| T-04  | hecho  | `b243c44` |
+| T-05  | hecho  | `b243c44` |
 
 ---
 
