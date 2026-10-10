@@ -12,7 +12,7 @@ engine = create_engine(engine_url)
 def cargar_csv(tabla_nombre, csv_path):
     """Lee un CSV y lo convierte en una tabla de SQLite"""
     if not os.path.exists(csv_path):
-        print(f"⚠️ Archivo no encontrado: {csv_path}")
+        print(f"[AVISO] Archivo no encontrado: {csv_path}")
         return
     
     try:
@@ -28,9 +28,9 @@ def cargar_csv(tabla_nombre, csv_path):
             df["fecha_registro"] = pd.Timestamp.now()
             
         df.to_sql(tabla_nombre, engine, if_exists='replace', index=False)
-        print(f"✅ Tabla '{tabla_nombre}' cargada ({len(df)} registros).")
+        print(f"[OK] Tabla '{tabla_nombre}' cargada ({len(df)} registros).")
     except Exception as e:
-        print(f"❌ Error al cargar '{tabla_nombre}': {str(e)}")
+        print(f"[ERROR] Error al cargar '{tabla_nombre}': {str(e)}")
 
 def main():
     print(f"Iniciando carga de datos hacia SQLite: {DB_PATH}")
@@ -58,7 +58,7 @@ def main():
         csv_path = os.path.join(csv_dir, archivo_csv)
         cargar_csv(tabla_nombre, csv_path)
         
-    print("⏳ Creando tablas de configuración (Usuarios, Logs, Reincidencias)...")
+    print("Creando tablas de configuracion (Usuarios, Logs, Reincidencias)...")
     try:
         pwd = b"admin123"
         hashed = bcrypt.hashpw(pwd, bcrypt.gensalt()).decode('utf-8')
@@ -137,11 +137,11 @@ def main():
                 WHERE NOT EXISTS (SELECT 1 FROM dim_version_bd);
             """))
             
-        print("✅ Tablas de configuración creadas con éxito.")
+        print("[OK] Tablas de configuracion creadas con exito.")
     except Exception as e:
-        print(f"❌ Error al crear tablas de configuración: {e}")
+        print(f"[ERROR] Error al crear tablas de configuracion: {e}")
         
-    print("🎉 Proceso finalizado. La base de datos SQLite 'operadores.db' está lista.")
+    print("[FINALIZADO] Proceso finalizado. La base de datos SQLite 'operadores.db' esta lista.")
 
 if __name__ == "__main__":
     main()
