@@ -13,10 +13,12 @@
             "C:\\Users\\maortiz\\AppData\\Roaming\\ai.opencode.desktop\\cli\\2.0.26\\opencode-cli.exe",
             "run",
             "--model",
-            "opencode-go/deepseek-v4.1-flash",
+            "deepseek/deepseek-flash",
             "--agent",
             "build",
-            "--auto"
+            "--auto",
+            "--format",
+            "json"
         ],
         "prompt_file": "C:\\Users\\maortiz\\.gemini\\config\\skills\\agent-orchestrator\\assets\\prompts\\desarrollador.md"
     },
