@@ -5,7 +5,7 @@
 | Spec    | [`020-spec.md`](./020-spec.md)                                       |
 | Plan    | [`020-plan.md`](./020-plan.md)                                       |
 | Rama    | `feat/bloqueo-campos-por-categoria-evento`                           |
-| Estado  | en progreso                                                          |
+| Estado  | completado                                         |
 
 ## Lista de tareas
 
