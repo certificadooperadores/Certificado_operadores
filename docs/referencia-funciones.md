@@ -85,7 +85,7 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 ### Pruebas
 
 - **Ubicación:** `tests/test_facade.py`
-- **Cobertura:** conexión (éxito y fallo), consulta por cédula/código (con y sin resultados), validación de certificado (por vencer, vigente, sin certificado, cancelado) y estadísticas básicas. Patrón AAA con SQLite temporal.
+- **Cobertura:** conexión (éxito y fallo), consulta por cédula/código (con y sin resultados), validación de certificado (por vencer, vigente, vencido, sin certificado, cancelado) y estadísticas básicas. Patrón AAA con SQLite temporal.
 
 ---
 

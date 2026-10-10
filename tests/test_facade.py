@@ -75,6 +75,7 @@ def _sembrar_datos(motor: Engine) -> None:
     hoy = date.today()
     por_vencer = (hoy - timedelta(days=365 * 3 - 30)).isoformat()
     vigente = (hoy - timedelta(days=10)).isoformat()
+    vencido = (hoy - timedelta(days=365 * 3 + 10)).isoformat()
 
     with motor.begin() as conexion:
         conexion.execute(
@@ -109,9 +110,10 @@ def _sembrar_datos(motor: Engine) -> None:
                 "(1, 5001, 1, :por_vencer, 1), "
                 "(2, 5002, 3, :vigente, 1), "
                 "(3, 5004, 1, :vigente, 1), "
-                "(4, 5004, 7, NULL, 1)"
+                "(4, 5004, 7, NULL, 1), "
+                "(5, 5005, 1, :vencido, 1)"
             ),
-            {"por_vencer": por_vencer, "vigente": vigente},
+            {"por_vencer": por_vencer, "vigente": vigente, "vencido": vencido},
         )
         conexion.execute(
             text(
@@ -271,6 +273,21 @@ def test_validar_certificado_cancelado(fachada: OperadoresFacade) -> None:
     # Assert
     assert estado.estado == "CANCELADO"
     assert estado.cancelado is True
+
+
+def test_validar_certificado_vencido(fachada: OperadoresFacade) -> None:
+    """Un certificado con fecha anterior al periodo de vigencia se marca ``VENCIDO``."""
+    # Arrange
+    codigo = 5005
+
+    # Act
+    estado = fachada.validar_certificado(codigo)
+
+    # Assert
+    assert estado.estado == "VENCIDO"
+    assert estado.cancelado is False
+    assert estado.dias_restantes is not None
+    assert estado.dias_restantes < 0
 
 
 # --- Objetivo: estadísticas básicas -----------------------------------------
