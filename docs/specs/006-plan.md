@@ -8,31 +8,33 @@
 
 ## 1. Enfoque
 
-Refactorizar el módulo modificacion_tablas para integrarlo al patrón Facade. De esta manera, aseguramos la separación de capas funciona de punta a punta.
+Refactorizar la funcionalidad de corrección de registros extrayéndola de `src/certificado_operadores/pages/1_Configuracion.py` hacia `src/certificado_operadores/modulos/correccion_registros/ui.py` con una función `render_correccion_registros()`, y delegando el acceso a base de datos a un repositorio dedicado.
 
 ## 2. Arquitectura y capas
 
 ```text
-UI (Streamlit `pages/`)  →  Módulo (`modulos/modificacion_tablas/ui.py`)  →  Facade Correspondiente  →  Infraestructura
+UI (Streamlit `pages/1_Configuracion.py`)  →  Pestaña (`modulos/correccion_registros/ui.py`)  →  Repositorio / Facade Eventos  →  SQLite
 ```
 
-La página principal en `pages/` solo invocará una función de renderizado `render_page()` desde la carpeta exclusiva del módulo.
+La página de configuración se limpia eliminando todas las funciones inlined de corrección y consultas SQL, importando únicamente `render_correccion_registros`.
 
 ## 3. Archivos afectados
 
 | Archivo | Acción (crear/modificar) | Nota |
 |---------|--------------------------|------|
-| `src/certificado_operadores/modulos/modificacion_tablas/ui.py` | crear | Funciones únicas de interfaz |
-| `src/certificado_operadores/modulos/modificacion_tablas/__init__.py` | crear | Definición de módulo de Python |
-| `src/certificado_operadores/pages/3_Modificacion_Tablas_Refactor.py` | crear/modificar | Punto de entrada de Streamlit |
-| `src/certificado_operadores/modulos/3_Modificacion_Tablas.py` | eliminar | Archivo obsoleto |
+| `src/certificado_operadores/modulos/correccion_registros/ui.py` | crear | Interfaz visual de corrección de registros |
+| `src/certificado_operadores/modulos/correccion_registros/__init__.py` | crear | Exporta `render_correccion_registros` |
+| `src/certificado_operadores/infra/eventos_repository.py` | crear | Repositorio para consultas y mutaciones de eventos |
+| `src/certificado_operadores/pages/1_Configuracion.py` | modificar | Remueve funciones inlined de corrección y llama a `render_correccion_registros()` |
+| `tests/test_correccion_registros.py` | crear | Pruebas unitarias de repositorio y lógica |
 
 ## 4. Orden de implementación
 
-1. Analizar los requerimientos de datos de `3_Modificacion_Tablas.py`.
-2. Extender las capas inferiores (Facade/Repositorio) si se requieren nuevos métodos de acceso a datos.
-3. Extraer la vista a `modulos/modificacion_tablas/ui.py` conectada al Facade.
-4. Crear el punto de entrada en `pages/` y eliminar el archivo heredado.
+1. Implementar repositorio con soporte para listar tipos de evento, filtrar eventos y mutar estado de lotes o registros.
+2. Extraer la lógica visual a `src/certificado_operadores/modulos/correccion_registros/ui.py`.
+3. Limpiar `src/certificado_operadores/pages/1_Configuracion.py` eliminando el código SQL inlined.
+4. Crear pruebas unitarias en `tests/test_correccion_registros.py`.
+5. Ejecutar `make test` y validar cobertura en verde.
 
 ---
 

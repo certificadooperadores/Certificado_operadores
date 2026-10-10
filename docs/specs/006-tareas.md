@@ -10,28 +10,28 @@
 
 - [x] **T-01** — Escribir especificación técnica, plan y tareas.
   - Estado: hecho
-- [ ] **T-02** — Actualizar Facade / Repositorio con métodos necesarios.
-  - Criterio de aceptación: La capa de infraestructura soporta los métodos de modificacion_tablas.
+- [ ] **T-02** — Implementar repositorio de eventos (`eventos_repository.py`) para filtrado y mutación.
+  - Criterio de aceptación: Operaciones sobre eventos y lotes aisladas con soporte de auditoría.
   - Estado: pendiente
-- [ ] **T-03** — Crear la carpeta `modulos/modificacion_tablas/` y su archivo `ui.py`.
-  - Criterio de aceptación: Lógica visual extraída, 0% SQL.
+- [ ] **T-03** — Crear el paquete `modulos/correccion_registros/` con `ui.py` y `__init__.py`.
+  - Criterio de aceptación: Función `render_correccion_registros()` creada sin sentencias SQL.
   - Estado: pendiente
-- [ ] **T-04** — Crear página principal en `pages/`.
-  - Criterio de aceptación: Importa `render_page()` desde el nuevo módulo.
+- [ ] **T-04** — Limpiar `pages/1_Configuracion.py`.
+  - Criterio de aceptación: Funciones inlined de corrección eliminadas; se llama `render_correccion_registros()`.
   - Estado: pendiente
-- [ ] **T-05** — Borrar archivo residual de la carpeta heredada `modulos/`.
-  - Criterio de aceptación: `3_Modificacion_Tablas.py` eliminado.
+- [ ] **T-05** — Pruebas unitarias en `tests/test_correccion_registros.py`.
+  - Criterio de aceptación: `make test` pasa 100% en verde.
   - Estado: pendiente
 
 ## Progreso
 
 | Tarea | Estado | Commit |
 |-------|--------|--------|
-| T-01  | ✅     | N/A    |
-| T-02  | ⏳     |        |
-| T-03  | ⏳     |        |
-| T-04  | ⏳     |        |
-| T-05  | ⏳     |        |
+| T-01  | hecho  | N/A    |
+| T-02  | pendiente |        |
+| T-03  | pendiente |        |
+| T-04  | pendiente |        |
+| T-05  | pendiente |        |
 
 ---
 
