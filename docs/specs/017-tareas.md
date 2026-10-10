@@ -9,9 +9,9 @@
 
 ## Lista de tareas
 
-- [ ] **T-01:** Implementar en `eventos_repository.py` los métodos de validación de dependencias de operadores y existencia de códigos.
-- [ ] **T-02:** Configurar `st.data_editor` en `modulos/correccion_registros/ui.py` con `column_config` (SelectboxColumn para estados y catálogos, columnas de auditoría protegidas).
-- [ ] **T-03:** Añadir flujo transaccional con botón "💾 Guardar Cambios" que valide dependencias y registre auditoría.
-- [ ] **T-04:** Bloquear borrado de registros con hijos dependientes mostrando mensaje preventivo.
-- [ ] **T-05:** Actualizar pruebas en `tests/test_correccion_registros.py` y asegurar 100% verde con `uv run pytest`.
-- [ ] **T-06:** Actualizar `docs/referencia-funciones.md` y `CONSTITUTION.md`.
+- [x] **T-01:** Implementar en `eventos_repository.py` los métodos de validación de dependencias de operadores y existencia de códigos.
+- [x] **T-02:** Configurar `st.data_editor` en `modulos/correccion_registros/ui.py` con `column_config` (SelectboxColumn para estados y catálogos, columnas de auditoría protegidas).
+- [x] **T-03:** Añadir flujo transaccional con botón "💾 Guardar Cambios" que valide dependencias y registre auditoría.
+- [x] **T-04:** Bloquear borrado de registros con hijos dependientes mostrando mensaje preventivo.
+- [x] **T-05:** Actualizar pruebas en `tests/test_correccion_registros.py` y asegurar 100% verde con `uv run pytest`.
+- [x] **T-06:** Actualizar `docs/referencia-funciones.md` y `CONSTITUTION.md`.

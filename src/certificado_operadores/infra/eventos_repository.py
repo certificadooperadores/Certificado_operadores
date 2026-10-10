@@ -67,6 +67,82 @@ ACCION_ANULAR_TABLA = "Anular"
 ACCION_ELIMINAR_TABLA = "Eliminar"
 """Prefijo de auditoría al eliminar registros de una tabla de corrección."""
 
+ACCION_EDITAR_TABLA = "Editar"
+"""Prefijo de auditoría al editar registros de una tabla de corrección (spec 017)."""
+
+ETIQUETA_ESTADO = "Estado"
+"""Encabezado de la columna de vigencia en el editor tipo Excel."""
+
+TABLA_PERSONA = "dim_persona"
+"""Nombre físico de la dimensión de personas (operadores) en la base de datos."""
+
+OPCION_VIGENTE = "vigente"
+"""Opción de la lista desplegable de estado equivalente a la vigencia activa."""
+
+OPCION_ANULADO = "anulado"
+"""Opción de la lista desplegable de estado equivalente a la vigencia anulada."""
+
+OPCIONES_ESTADO: tuple[str, ...] = (OPCION_VIGENTE, OPCION_ANULADO)
+"""Opciones restringidas de la columna ``Estado`` (spec 017, S-04)."""
+
+GENEROS_VALIDOS: tuple[str, ...] = ("M", "F")
+"""Géneros permitidos en la columna ``Género`` (spec 017, S-04)."""
+
+TIPO_EDICION_TEXTO = "texto"
+"""Tipo de dato editable: texto libre."""
+
+TIPO_EDICION_ENTERO = "entero"
+"""Tipo de dato editable: número entero."""
+
+TIPO_EDICION_FECHA = "fecha"
+"""Tipo de dato editable: fecha en texto ISO."""
+
+TIPO_EDICION_CODIGO = "codigo"
+"""Tipo de dato editable que valida su existencia en ``dim_codigo`` (spec 017, S-02)."""
+
+TIPO_EDICION_VIGENCIA = "vigencia"
+"""Tipo de dato editable que restringe los valores a vigente/anulado (spec 017, S-04)."""
+
+TIPO_EDICION_EVENTO = "evento"
+"""Tipo de dato editable restringido a los tipos de evento de ``dim_tipo_evento``."""
+
+TIPO_EDICION_GENERO = "genero"
+"""Tipo de dato editable restringido a ``M``/``F`` (spec 017, S-04)."""
+
+MENSAJE_DEPENDENCIAS = (
+    "No se puede eliminar: el registro tiene {eventos} eventos y "
+    "{comportamientos} comportamientos dependientes. Debe anularlo o "
+    "depurar los registros hijos primero."
+)
+"""Mensaje explícito que aborta la eliminación de un registro con hijos (spec 017, S-01)."""
+
+MENSAJE_CODIGO_INEXISTENTE = (
+    "El código {codigo} no existe en el catálogo de códigos; la edición fue cancelada."
+)
+"""Mensaje de error al reasignar un código inexistente (spec 017, S-02)."""
+
+MENSAJE_COLUMNA_PROTEGIDA = "La columna «{etiqueta}» es de solo lectura y no puede modificarse."
+"""Mensaje de error al intentar editar una columna protegida (spec 017, S-03)."""
+
+MENSAJE_VALOR_INVALIDO = "El valor «{valor}» no es válido para la columna «{etiqueta}»."
+"""Mensaje de error ante un valor fuera del catálogo permitido (spec 017, S-04)."""
+
+
+class DependenciaRegistroError(ValueError):
+    """Error de integridad referencial: el registro tiene hijos dependientes (spec 017, S-01)."""
+
+
+class CodigoInexistenteError(ValueError):
+    """Error de reasignación: el código indicado no existe en ``dim_codigo`` (spec 017, S-02)."""
+
+
+class ColumnaProtegidaError(ValueError):
+    """Error de edición: se intentó modificar una columna de solo lectura (spec 017, S-03)."""
+
+
+class ValorInvalidoError(ValueError):
+    """Error de edición: el valor está fuera del catálogo permitido (spec 017, S-04)."""
+
 
 @dataclass(frozen=True)
 class TipoEventoInfo:
@@ -163,12 +239,42 @@ class ColumnaTabla:
 
 
 @dataclass(frozen=True)
+class ColumnaEditable:
+    """Columna editable de una tabla de corrección (editor tipo Excel, spec 017).
+
+    Attributes:
+        etiqueta: Encabezado legible que comparte con la columna visible.
+        columna: Nombre físico de la columna en la tabla de la base de datos.
+        tipo: Tipo de edición (texto, entero, fecha, código, vigencia, evento o género).
+    """
+
+    etiqueta: str
+    columna: str
+    tipo: str
+
+
+@dataclass(frozen=True)
+class CambioRegistro:
+    """Cambio solicitado sobre una celda de una tabla de corrección.
+
+    Attributes:
+        id_registro: Valor de la clave primaria de la fila a modificar.
+        etiqueta: Encabezado legible de la columna editada.
+        valor: Valor nuevo propuesto para la celda.
+    """
+
+    id_registro: int
+    etiqueta: str
+    valor: object
+
+
+@dataclass(frozen=True)
 class DefinicionTabla:
     """Metadatos de una tabla soportada por la corrección de registros.
 
     Concentra, como configuración declarativa, el nombre de la tabla, su clave
-    primaria, la columna de vigencia y las columnas visibles. La UI y el
-    repositorio la consumen para listar y mutar registros sin conocer el esquema.
+    primaria, la columna de vigencia y las columnas visibles y editables. La UI y
+    el repositorio la consumen para listar y mutar registros sin conocer el esquema.
 
     Attributes:
         clave: Identificador corto y estable de la tabla (p. ej. ``eventos``).
@@ -180,6 +286,9 @@ class DefinicionTabla:
         columnas: Columnas visibles, en el orden en que se muestran.
         desde: Clausura ``FROM`` con las uniones necesarias para las columnas.
         orden: Clausura ``ORDER BY`` con la que se listan los registros.
+        editables: Columnas que el editor permite modificar (spec 017).
+        protege_dependencias: Si es ``True``, la eliminación se bloquea cuando el
+            registro tiene hijos dependientes (spec 017, S-01).
     """
 
     clave: str
@@ -191,6 +300,8 @@ class DefinicionTabla:
     columnas: tuple[ColumnaTabla, ...]
     desde: str
     orden: str
+    editables: tuple[ColumnaEditable, ...] = ()
+    protege_dependencias: bool = False
 
 
 @dataclass(frozen=True)
@@ -240,6 +351,10 @@ TABLAS_CORRECCION: tuple[DefinicionTabla, ...] = (
             "JOIN dim_tipo_evento AS te ON e.id_tipo_evento = te.id_tipo_evento"
         ),
         orden="e.fecha_registro DESC",
+        editables=(
+            ColumnaEditable("Código", "id_codigo", TIPO_EDICION_CODIGO),
+            ColumnaEditable("Evento", "id_tipo_evento", TIPO_EDICION_EVENTO),
+        ),
     ),
     DefinicionTabla(
         clave="licencias",
@@ -261,6 +376,11 @@ TABLAS_CORRECCION: tuple[DefinicionTabla, ...] = (
             "LEFT JOIN dim_persona AS p ON c.id_persona = p.id_persona"
         ),
         orden="l.id_hecho_licencia DESC",
+        editables=(
+            ColumnaEditable("Código", "id_codigo", TIPO_EDICION_CODIGO),
+            ColumnaEditable("Tipo", "tipo", TIPO_EDICION_TEXTO),
+            ColumnaEditable("Vencimiento", "vencimiento", TIPO_EDICION_FECHA),
+        ),
     ),
     DefinicionTabla(
         clave="comportamientos",
@@ -283,6 +403,12 @@ TABLAS_CORRECCION: tuple[DefinicionTabla, ...] = (
             "LEFT JOIN dim_persona AS p ON c.id_persona = p.id_persona"
         ),
         orden="fc.fecha_registro DESC",
+        editables=(
+            ColumnaEditable("Código", "id_codigo", TIPO_EDICION_CODIGO),
+            ColumnaEditable("Fuente", "fuente", TIPO_EDICION_TEXTO),
+            ColumnaEditable("Descripción", "descripcion_comportamiento", TIPO_EDICION_TEXTO),
+            ColumnaEditable("Fecha evento", "fecha_evento", TIPO_EDICION_FECHA),
+        ),
     ),
     DefinicionTabla(
         clave="operadores",
@@ -300,6 +426,13 @@ TABLAS_CORRECCION: tuple[DefinicionTabla, ...] = (
         ),
         desde="FROM dim_persona AS p",
         orden="p.id_persona",
+        editables=(
+            ColumnaEditable("Nombres", "nombres", TIPO_EDICION_TEXTO),
+            ColumnaEditable("Primer apellido", "primer_apellido", TIPO_EDICION_TEXTO),
+            ColumnaEditable("Segundo apellido", "segundo_apellido", TIPO_EDICION_TEXTO),
+            ColumnaEditable("Género", "genero", TIPO_EDICION_GENERO),
+        ),
+        protege_dependencias=True,
     ),
 )
 """Catálogo declarativo de las tablas que soporta la corrección de registros."""
@@ -352,6 +485,104 @@ _SQL_ELIMINAR_LOTE = text(
 _SQL_AUDITORIA = text(
     "INSERT INTO log_auditoria (usuario, accion, detalles) VALUES (:usuario, :accion, :detalles)"
 )
+
+# --- Spec 017: integridad referencial y edición segura ----------------------
+_SQL_CODIGOS_DE_PERSONA = text("SELECT id_codigo FROM dim_codigo WHERE id_persona = :id_persona")
+
+_SQL_CODIGO_EXISTE = text("SELECT 1 FROM dim_codigo WHERE id_codigo = :id_codigo LIMIT 1")
+
+_SQL_TIPO_EVENTO_POR_NOMBRE = text(
+    "SELECT id_tipo_evento FROM dim_tipo_evento WHERE nombre_evento = :nombre LIMIT 1"
+)
+
+_SQL_CONTEO_DEPENDENCIAS: dict[str, TextClause] = {
+    "eventos": text(
+        "SELECT COUNT(*) FROM fact_eventos_operador WHERE id_codigo IN :ids"
+    ).bindparams(bindparam("ids", expanding=True)),
+    "comportamientos": text(
+        "SELECT COUNT(*) FROM fact_comportamiento WHERE id_codigo IN :ids"
+    ).bindparams(bindparam("ids", expanding=True)),
+    "licencias": text("SELECT COUNT(*) FROM fact_licencias WHERE id_codigo IN :ids").bindparams(
+        bindparam("ids", expanding=True)
+    ),
+}
+
+
+def _sql_actualizar_columna(definicion: DefinicionTabla, columna: str) -> TextClause:
+    """Construye la sentencia que actualiza una columna de una fila de la tabla.
+
+    El nombre de la tabla y de la columna provienen del catálogo declarativo (no
+    de datos del usuario); el valor viaja como parámetro enlazado.
+
+    Args:
+        definicion: Metadatos de la tabla a modificar.
+        columna: Nombre físico de la columna a actualizar.
+
+    Returns:
+        La sentencia parametrizada con ``:valor`` e ``:id``.
+    """
+    return text(
+        f"UPDATE {definicion.tabla} SET {columna} = :valor WHERE {definicion.columna_id} = :id"
+    )
+
+
+def _columna_editable(definicion: DefinicionTabla, etiqueta: str) -> ColumnaEditable | None:
+    """Busca en la definición la columna editable con esa etiqueta.
+
+    Args:
+        definicion: Metadatos de la tabla.
+        etiqueta: Encabezado legible de la columna.
+
+    Returns:
+        La :class:`ColumnaEditable` correspondiente, o ``None`` si la etiqueta no
+        es editable (columna protegida o inexistente).
+    """
+    if etiqueta == ETIQUETA_ESTADO:
+        return ColumnaEditable(ETIQUETA_ESTADO, "id_vigencia", TIPO_EDICION_VIGENCIA)
+    for columna in definicion.editables:
+        if columna.etiqueta == etiqueta:
+            return columna
+    return None
+
+
+def _a_entero(valor: object) -> int:
+    """Convierte el valor de una celda a entero, tolerando cadenas y decimales.
+
+    Args:
+        valor: Valor crudo proveniente del editor o de la base de datos.
+
+    Returns:
+        El valor convertido a ``int``.
+
+    Raises:
+        ValorInvalidoError: Si el valor no es convertible a entero.
+    """
+    try:
+        return int(float(str(valor)))
+    except (TypeError, ValueError) as error:
+        raise ValorInvalidoError(MENSAJE_VALOR_INVALIDO.format(valor=valor, etiqueta="")) from error
+
+
+def _vigencia_desde_opcion(valor: object) -> int:
+    """Traduce el valor de la lista desplegable de estado a la vigencia numérica.
+
+    Args:
+        valor: ``vigente``/``anulado`` (texto) o el propio identificador numérico.
+
+    Returns:
+        La vigencia equivalente (``VIGENCIA_ACTIVA`` o ``VIGENCIA_ANULADA``).
+
+    Raises:
+        ValorInvalidoError: Si el valor no corresponde a una opción permitida.
+    """
+    if isinstance(valor, int) and valor in (VIGENCIA_ACTIVA, VIGENCIA_ANULADA):
+        return valor
+    texto = str(valor).strip().lower()
+    if texto == OPCION_VIGENTE:
+        return VIGENCIA_ACTIVA
+    if texto == OPCION_ANULADO:
+        return VIGENCIA_ANULADA
+    raise ValorInvalidoError(MENSAJE_VALOR_INVALIDO.format(valor=valor, etiqueta=ETIQUETA_ESTADO))
 
 
 def _mapear_evento(fila: RowMapping) -> EventoInfo:
@@ -739,6 +970,10 @@ class EventosRepository:
     def eliminar_registros_tabla(self, clave: str, ids: list[int], usuario: str) -> int:
         """Elimina físicamente los registros indicados y audita la acción.
 
+        Antes de borrar, si la tabla protege dependencias (operadores), comprueba
+        que ningún registro tenga eventos, comportamientos o licencias asociados
+        y aborta con un mensaje explícito (spec 017, S-01).
+
         Args:
             clave: Identificador corto de la tabla a modificar.
             ids: Identificadores de los registros a eliminar.
@@ -749,17 +984,186 @@ class EventosRepository:
 
         Raises:
             ValueError: Si la clave no corresponde a una tabla soportada.
+            DependenciaRegistroError: Si algún registro tiene hijos dependientes.
         """
         definicion = _definicion(clave)
         lista = self._normalizar_ids(ids)
         if not lista:
             return 0
+        if definicion.protege_dependencias:
+            self._verificar_dependencias(definicion, lista)
         accion = f"{ACCION_ELIMINAR_TABLA} {definicion.etiqueta}"
         detalles = f"IDs: {','.join(str(identificador) for identificador in lista)}"
         with self.motor.begin() as conexion:
             filas = int(conexion.execute(_sql_eliminar_tabla(definicion), {"ids": lista}).rowcount)
             self._auditar(conexion, usuario, accion, detalles)
         return filas
+
+    def contar_dependencias_operador(
+        self, id_persona: int, id_codigo: int | None = None
+    ) -> dict[str, int]:
+        """Cuenta los registros hijos asociados a un operador (spec 017, S-01).
+
+        Args:
+            id_persona: Documento del operador (``dim_persona.id_persona``).
+            id_codigo: Código de operación concreto. Si es ``None`` se cuentan
+                todos los códigos del operador.
+
+        Returns:
+            Un mapa ``{"eventos": int, "comportamientos": int, "licencias": int}``
+            con el total de registros dependientes en cada tabla de hechos.
+        """
+        with self.motor.connect() as conexion:
+            if id_codigo is None:
+                filas = conexion.execute(
+                    _SQL_CODIGOS_DE_PERSONA, {"id_persona": int(id_persona)}
+                ).all()
+                codigos = [int(fila[0]) for fila in filas]
+            else:
+                codigos = [int(id_codigo)]
+            if not codigos:
+                return dict.fromkeys(_SQL_CONTEO_DEPENDENCIAS, 0)
+            return {
+                tabla: int(conexion.execute(sentencia, {"ids": codigos}).scalar_one())
+                for tabla, sentencia in _SQL_CONTEO_DEPENDENCIAS.items()
+            }
+
+    def validar_codigo_existe(self, id_codigo: int) -> bool:
+        """Indica si un código de operación existe en ``dim_codigo`` (spec 017, S-02).
+
+        Args:
+            id_codigo: Código de operación a validar.
+
+        Returns:
+            ``True`` si el código existe; ``False`` en caso contrario.
+        """
+        with self.motor.connect() as conexion:
+            return (
+                conexion.execute(_SQL_CODIGO_EXISTE, {"id_codigo": int(id_codigo)}).first()
+                is not None
+            )
+
+    def actualizar_registros_seguros(
+        self, clave: str, cambios: list[CambioRegistro], usuario: str
+    ) -> int:
+        """Aplica cambios de celdas validando las reglas de seguridad (spec 017).
+
+        Cada cambio se resuelve y valida dentro de la misma transacción: la
+        columna debe ser editable (S-03), los códigos reasignados deben existir en
+        ``dim_codigo`` (S-02) y los valores de listas desplegables deben pertenecer
+        al catálogo permitido (S-04). Si cualquier cambio falla, la transacción se
+        revierte por completo y no se registra auditoría (S-05).
+
+        Args:
+            clave: Identificador corto de la tabla a modificar.
+            cambios: Lista de :class:`CambioRegistro` solicitados.
+            usuario: Usuario que ejecuta la acción (para auditoría).
+
+        Returns:
+            Número de filas afectadas; ``0`` si la lista está vacía.
+
+        Raises:
+            ValueError: Si la clave no corresponde a una tabla soportada.
+            ColumnaProtegidaError: Si se intenta editar una columna de solo lectura.
+            CodigoInexistenteError: Si se reasigna un código inexistente.
+            ValorInvalidoError: Si el valor no pertenece al catálogo permitido.
+        """
+        definicion = _definicion(clave)
+        if not cambios:
+            return 0
+        afectados = 0
+        with self.motor.begin() as conexion:
+            for cambio in cambios:
+                columna = _columna_editable(definicion, cambio.etiqueta)
+                if columna is None:
+                    raise ColumnaProtegidaError(
+                        MENSAJE_COLUMNA_PROTEGIDA.format(etiqueta=cambio.etiqueta)
+                    )
+                valor = self._resolver_valor(conexion, columna, cambio.valor)
+                afectados += int(
+                    conexion.execute(
+                        _sql_actualizar_columna(definicion, columna.columna),
+                        {"valor": valor, "id": int(cambio.id_registro)},
+                    ).rowcount
+                )
+            detalles = (
+                f"IDs: {','.join(str(int(cambio.id_registro)) for cambio in cambios)}; "
+                f"Columnas: {','.join(cambio.etiqueta for cambio in cambios)}"
+            )
+            self._auditar(
+                conexion, usuario, f"{ACCION_EDITAR_TABLA} {definicion.etiqueta}", detalles
+            )
+        return afectados
+
+    def _verificar_dependencias(self, definicion: DefinicionTabla, ids: list[int]) -> None:
+        """Aborta la eliminación si algún registro tiene hijos dependientes.
+
+        Args:
+            definicion: Metadatos de la tabla a eliminar.
+            ids: Identificadores de los registros que se intentan borrar.
+
+        Raises:
+            DependenciaRegistroError: Si el total de eventos o comportamientos
+                dependientes es mayor que cero.
+        """
+        totales = {"eventos": 0, "comportamientos": 0, "licencias": 0}
+        for id_registro in ids:
+            if definicion.tabla == TABLA_PERSONA:
+                dependencias = self.contar_dependencias_operador(id_registro)
+            else:
+                dependencias = self.contar_dependencias_operador(0, id_codigo=id_registro)
+            for tabla, total in dependencias.items():
+                totales[tabla] += total
+        if totales["eventos"] > 0 or totales["comportamientos"] > 0 or totales["licencias"] > 0:
+            raise DependenciaRegistroError(
+                MENSAJE_DEPENDENCIAS.format(
+                    eventos=totales["eventos"], comportamientos=totales["comportamientos"]
+                )
+            )
+
+    @staticmethod
+    def _resolver_valor(conexion: Connection, columna: ColumnaEditable, valor: object) -> object:
+        """Valida y normaliza el valor de una celda según el tipo de columna.
+
+        Args:
+            conexion: Conexión activa dentro de la transacción.
+            columna: Metadatos de la columna editable.
+            valor: Valor nuevo propuesto.
+
+        Returns:
+            El valor listo para el parámetro enlazado del ``UPDATE``.
+
+        Raises:
+            CodigoInexistenteError: Si el código reasignado no existe.
+            ValorInvalidoError: Si el valor no pertenece al catálogo permitido.
+        """
+        if columna.tipo == TIPO_EDICION_VIGENCIA:
+            return _vigencia_desde_opcion(valor)
+        if columna.tipo == TIPO_EDICION_CODIGO:
+            codigo = _a_entero(valor)
+            if conexion.execute(_SQL_CODIGO_EXISTE, {"id_codigo": codigo}).first() is None:
+                raise CodigoInexistenteError(MENSAJE_CODIGO_INEXISTENTE.format(codigo=codigo))
+            return codigo
+        if columna.tipo == TIPO_EDICION_EVENTO:
+            nombre = str(valor)
+            fila = conexion.execute(_SQL_TIPO_EVENTO_POR_NOMBRE, {"nombre": nombre}).first()
+            if fila is None:
+                raise ValorInvalidoError(
+                    MENSAJE_VALOR_INVALIDO.format(valor=valor, etiqueta=columna.etiqueta)
+                )
+            return int(fila[0])
+        if columna.tipo == TIPO_EDICION_GENERO:
+            genero = str(valor).strip().upper()
+            if genero not in GENEROS_VALIDOS:
+                raise ValorInvalidoError(
+                    MENSAJE_VALOR_INVALIDO.format(valor=valor, etiqueta=columna.etiqueta)
+                )
+            return genero
+        if columna.tipo == TIPO_EDICION_ENTERO:
+            return _a_entero(valor)
+        if valor is None:
+            return None
+        return str(valor)
 
     def _cambiar_vigencia(self, ids: list[int], vigencia: int, accion: str, usuario: str) -> int:
         """Cambia la vigencia de registros individuales y audita la acción.
@@ -845,6 +1249,7 @@ __all__ = [
     "ACCION_ANULAR_LOTE",
     "ACCION_ANULAR_REGISTROS",
     "ACCION_ANULAR_TABLA",
+    "ACCION_EDITAR_TABLA",
     "ACCION_ELIMINAR_LOTE",
     "ACCION_ELIMINAR_REGISTROS",
     "ACCION_ELIMINAR_TABLA",
@@ -853,15 +1258,38 @@ __all__ = [
     "ACCION_REACTIVAR_TABLA",
     "ESTADO_ANULADO_TEXTO",
     "ESTADO_VIGENTE_TEXTO",
+    "ETIQUETA_ESTADO",
     "FORMATO_LOTE",
+    "GENEROS_VALIDOS",
     "LIMITE_POR_DEFECTO",
+    "MENSAJE_CODIGO_INEXISTENTE",
+    "MENSAJE_COLUMNA_PROTEGIDA",
+    "MENSAJE_DEPENDENCIAS",
+    "MENSAJE_VALOR_INVALIDO",
+    "OPCIONES_ESTADO",
+    "OPCION_ANULADO",
+    "OPCION_VIGENTE",
     "TABLAS_CORRECCION",
+    "TABLA_PERSONA",
+    "TIPO_EDICION_CODIGO",
+    "TIPO_EDICION_ENTERO",
+    "TIPO_EDICION_EVENTO",
+    "TIPO_EDICION_FECHA",
+    "TIPO_EDICION_GENERO",
+    "TIPO_EDICION_TEXTO",
+    "TIPO_EDICION_VIGENCIA",
+    "CambioRegistro",
+    "CodigoInexistenteError",
+    "ColumnaEditable",
+    "ColumnaProtegidaError",
     "ColumnaTabla",
     "DefinicionTabla",
+    "DependenciaRegistroError",
     "EventoInfo",
     "EventosRepository",
     "FiltroEventos",
     "LoteInfo",
     "RegistroInfo",
     "TipoEventoInfo",
+    "ValorInvalidoError",
 ]

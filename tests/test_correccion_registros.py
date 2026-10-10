@@ -1,13 +1,14 @@
-"""Pruebas de la corrección de registros (spec 015).
+"""Pruebas de la corrección de registros (specs 015 y 017).
 
-Cubren cuatro frentes: el repositorio ``EventosRepository`` contra una base
-SQLite temporal (búsqueda con filtros y mutaciones de la spec 006, más el
-listado y las mutaciones genéricas por tabla de la spec 015), las funciones
-puras de la UI, el catálogo de tablas soportadas y las verificaciones estáticas
-de los criterios de aceptación: el paquete existe, la UI organiza la corrección
-en sub-pestañas por tabla, no contiene SQL ni filtros externos masivos, usa la
-tabla interactiva con selección múltiple y expone los botones de acción. Todas
-las pruebas siguen el patrón AAA (*Arrange · Act · Assert*).
+Cubren cinco frentes: el repositorio ``EventosRepository`` contra una base
+SQLite temporal (búsqueda con filtros y mutaciones de la spec 006, el listado y
+las mutaciones genéricas por tabla de la spec 015, y las validaciones de
+integridad referencial y edición segura de la spec 017), las funciones puras de
+la UI tipo Excel, el catálogo de tablas soportadas y las verificaciones estáticas
+de los criterios de aceptación: el paquete existe, la UI usa ``st.data_editor``
+con columnas protegidas y listas desplegables, no contiene SQL, expone el botón
+de guardado y el repositorio valida dependencias y códigos. Todas las pruebas
+siguen el patrón AAA (*Arrange · Act · Assert*).
 
 Autor: Ing. Miguel Angel Ortiz Roldan
 """
@@ -30,18 +31,29 @@ from certificado_operadores.domain.usuarios import (
 )
 from certificado_operadores.infra.eventos_repository import (
     ACCION_ANULAR_REGISTROS,
+    ACCION_EDITAR_TABLA,
     ACCION_ELIMINAR_LOTE,
     ACCION_ELIMINAR_REGISTROS,
     ACCION_REACTIVAR_LOTE,
     ACCION_REACTIVAR_REGISTROS,
+    ETIQUETA_ESTADO,
+    GENEROS_VALIDOS,
+    OPCION_ANULADO,
+    OPCION_VIGENTE,
+    TABLA_PERSONA,
     TABLAS_CORRECCION,
+    CambioRegistro,
+    CodigoInexistenteError,
+    ColumnaProtegidaError,
     DefinicionTabla,
+    DependenciaRegistroError,
     EventoInfo,
     EventosRepository,
     FiltroEventos,
     LoteInfo,
     RegistroInfo,
     TipoEventoInfo,
+    ValorInvalidoError,
 )
 from certificado_operadores.modulos.correccion_registros import ui
 
@@ -620,9 +632,206 @@ def test_eliminar_registros_tabla_sin_ids_no_afecta_ni_audita(
     assert _auditoria(motor_sqlite) == []
 
 
+# --- Spec 017: integridad referencial (S-01) --------------------------------
+def test_contar_dependencias_operador_cuenta_hijos(repositorio: EventosRepository) -> None:
+    """CA-02: el operador 1001 tiene 2 eventos, 1 comportamiento y 1 licencia."""
+    # Arrange / Act
+    dependencias = repositorio.contar_dependencias_operador(1001)
+
+    # Assert
+    assert dependencias == {"eventos": 2, "comportamientos": 1, "licencias": 1}
+
+
+def test_contar_dependencias_operador_por_codigo(repositorio: EventosRepository) -> None:
+    """CA-02: el conteo se puede acotar a un código de operación concreto."""
+    # Arrange / Act
+    dependencias = repositorio.contar_dependencias_operador(1001, id_codigo=5001)
+
+    # Assert
+    assert dependencias == {"eventos": 2, "comportamientos": 1, "licencias": 1}
+
+
+def test_contar_dependencias_operador_sin_codigos(repositorio: EventosRepository) -> None:
+    """CA-02: un operador sin códigos no tiene dependencias."""
+    # Arrange / Act
+    dependencias = repositorio.contar_dependencias_operador(9999)
+
+    # Assert
+    assert dependencias == {"eventos": 0, "comportamientos": 0, "licencias": 0}
+
+
+def test_validar_codigo_existe(repositorio: EventosRepository) -> None:
+    """CA-03: el repositorio distingue códigos existentes de inexistentes."""
+    # Arrange / Act / Assert
+    assert repositorio.validar_codigo_existe(5001) is True
+    assert repositorio.validar_codigo_existe(9999) is False
+
+
+def test_eliminar_operador_con_dependencias_bloquea(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-02/S-01: no se elimina un operador con eventos ni comportamientos."""
+    # Arrange
+    with pytest.raises(DependenciaRegistroError) as error:
+        # Act
+        repositorio.eliminar_registros_tabla("operadores", [1001], "admin")
+
+    # Assert
+    assert "2 eventos" in str(error.value)
+    assert "1 comportamientos" in str(error.value)
+    assert "depurar los registros hijos" in str(error.value)
+    assert _total(motor_sqlite, TABLA_PERSONA) == 3
+    assert _auditoria(motor_sqlite) == []
+
+
+def test_eliminar_operador_sin_dependencias_permite(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-02/S-01: un operador sin hijos sí puede eliminarse y se audita."""
+    # Act
+    afectados = repositorio.eliminar_registros_tabla("operadores", [1003], "admin")
+
+    # Assert
+    assert afectados == 1
+    assert _total(motor_sqlite, TABLA_PERSONA) == 2
+    assert _auditoria(motor_sqlite) == [("Eliminar Operadores", "IDs: 1003")]
+
+
+# --- Spec 017: edición segura de celdas (S-02, S-03, S-04, S-05) ------------
+def test_actualizar_registros_seguros_cambia_estado(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-04: el editor cambia el estado y audita con la tabla."""
+    # Arrange
+    cambio = CambioRegistro(1, ETIQUETA_ESTADO, OPCION_ANULADO)
+
+    # Act
+    afectados = repositorio.actualizar_registros_seguros("licencias", [cambio], "admin")
+
+    # Assert
+    assert afectados == 1
+    assert _vigencia_de(motor_sqlite, "fact_licencias", "id_hecho_licencia", 1) == VIGENCIA_ANULADA
+    assert _auditoria(motor_sqlite) == [
+        (f"{ACCION_EDITAR_TABLA} Licencias", "IDs: 1; Columnas: Estado")
+    ]
+
+
+def test_actualizar_registros_seguros_reasigna_codigo_valido(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-03: reasignar un código existente se aplica y audita."""
+    # Arrange
+    cambio = CambioRegistro(1, "Código", 5002)
+
+    # Act
+    afectados = repositorio.actualizar_registros_seguros("comportamientos", [cambio], "admin")
+
+    # Assert
+    assert afectados == 1
+    with motor_sqlite.connect() as conexion:
+        codigo = conexion.execute(
+            text("SELECT id_codigo FROM fact_comportamiento WHERE id_hecho_comportamiento = 1")
+        ).scalar_one()
+    assert int(codigo) == 5002
+    assert _auditoria(motor_sqlite) == [
+        (f"{ACCION_EDITAR_TABLA} Comportamientos", "IDs: 1; Columnas: Código")
+    ]
+
+
+def test_actualizar_registros_seguros_codigo_inexistente_cancela(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-03/S-02: reasignar un código inexistente cancela la edición."""
+    # Arrange
+    cambio = CambioRegistro(1, "Código", 9999)
+
+    # Act
+    with pytest.raises(CodigoInexistenteError):
+        repositorio.actualizar_registros_seguros("eventos", [cambio], "admin")
+
+    # Assert
+    assert _auditoria(motor_sqlite) == []
+
+
+def test_actualizar_registros_seguros_columna_protegida_lanza(
+    repositorio: EventosRepository,
+) -> None:
+    """CA-01/S-03: editar una columna de solo lectura está prohibido."""
+    # Arrange
+    cambio = CambioRegistro(1, "Nombre", "Intruso")
+
+    # Act / Assert
+    with pytest.raises(ColumnaProtegidaError):
+        repositorio.actualizar_registros_seguros("eventos", [cambio], "admin")
+
+
+def test_actualizar_registros_seguros_rollback_atomico(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-04/S-05: un error revierte por completo la transacción (sin auditoría)."""
+    # Arrange
+    cambios = [
+        CambioRegistro(1, ETIQUETA_ESTADO, OPCION_ANULADO),
+        CambioRegistro(2, "Código", 9999),
+    ]
+
+    # Act
+    with pytest.raises(CodigoInexistenteError):
+        repositorio.actualizar_registros_seguros("eventos", cambios, "admin")
+
+    # Assert: el primer cambio válido también se revirtió
+    assert (
+        _vigencia_de(motor_sqlite, "fact_eventos_operador", "id_hecho_evento", 1) == VIGENCIA_ACTIVA
+    )
+    assert _auditoria(motor_sqlite) == []
+
+
+def test_actualizar_registros_seguros_cambia_evento_por_nombre(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """S-04: la lista de eventos se resuelve por nombre contra ``dim_tipo_evento``."""
+    # Arrange
+    cambio = CambioRegistro(1, "Evento", "Cancelación")
+
+    # Act
+    afectados = repositorio.actualizar_registros_seguros("eventos", [cambio], "admin")
+
+    # Assert
+    assert afectados == 1
+    with motor_sqlite.connect() as conexion:
+        tipo = conexion.execute(
+            text("SELECT id_tipo_evento FROM fact_eventos_operador WHERE id_hecho_evento = 1")
+        ).scalar_one()
+    assert int(tipo) == 7
+
+
+def test_actualizar_registros_seguros_genero_invalido_lanza(
+    repositorio: EventosRepository,
+) -> None:
+    """S-04: un género fuera de la lista permitida se rechaza."""
+    # Arrange
+    cambio = CambioRegistro(1001, "Género", "X")
+
+    # Act / Assert
+    with pytest.raises(ValorInvalidoError):
+        repositorio.actualizar_registros_seguros("operadores", [cambio], "admin")
+
+
+def test_actualizar_registros_seguros_sin_cambios_no_audita(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """Caso de borde: una lista de cambios vacía no ejecuta SQL ni audita."""
+    # Arrange / Act
+    afectados = repositorio.actualizar_registros_seguros("eventos", [], "admin")
+
+    # Assert
+    assert afectados == 0
+    assert _auditoria(motor_sqlite) == []
+
+
 # --- UI: funciones puras -----------------------------------------------------
-def test_filas_registros_mapea_columnas_y_estado() -> None:
-    """La tabla de la UI expone la columna ID, las visibles y el estado."""
+def test_filas_editor_mapea_estado_en_minusculas() -> None:
+    """CA-01: el editor expone la columna ID, las visibles y el estado restringido."""
     # Arrange
     registro = RegistroInfo(
         id_registro=2,
@@ -637,7 +846,7 @@ def test_filas_registros_mapea_columnas_y_estado() -> None:
     )
 
     # Act
-    filas = ui.filas_registros(_definicion("licencias"), [registro])
+    filas = ui.filas_editor(_definicion("licencias"), [registro])
 
     # Assert
     assert filas == [
@@ -648,37 +857,98 @@ def test_filas_registros_mapea_columnas_y_estado() -> None:
             "Nombre": "Luis Rojas",
             "Tipo": "C2",
             "Vencimiento": "2031-01-01",
-            "Estado": "Anulado",
+            "Estado": "anulado",
         }
     ]
 
 
-class _SeleccionFalsa:
-    """Doble del objeto de selección de ``st.dataframe``."""
+def test_columnas_protegidas_marca_solo_lectura() -> None:
+    """CA-01/S-03: la cédula, el nombre y el ID quedan de solo lectura."""
+    # Arrange / Act
+    protegidas = ui.columnas_protegidas(_definicion("licencias"))
 
-    def __init__(self, filas: list[int]) -> None:
-        """Configura las filas seleccionadas."""
-        self.selection = type("_Sel", (), {"rows": filas})()
+    # Assert
+    assert "ID" in protegidas
+    assert "Cédula" in protegidas
+    assert "Nombre" in protegidas
+    assert "Código" not in protegidas
+    assert "Vencimiento" not in protegidas
+    assert ETIQUETA_ESTADO not in protegidas
 
 
-def test_filas_seleccionadas_extrae_los_indices() -> None:
-    """La selección de la tabla se traduce a índices enteros."""
-    # Arrange / Act / Assert
-    assert ui.filas_seleccionadas(_SeleccionFalsa([0, 2])) == [0, 2]
-    assert ui.filas_seleccionadas(None) == []
-
-
-def test_ids_seleccionados_traduce_indices_y_descarta_invalidos() -> None:
-    """Los índices de la tabla se traducen a IDs, ignorando los fuera de rango."""
+def test_configuracion_columnas_expone_las_listas_desplegables() -> None:
+    """CA-01/S-04: estado y género usan ``SelectboxColumn`` con opciones fijas."""
     # Arrange
-    registros = [
-        RegistroInfo(10, VIGENCIA_ACTIVA, {}),
-        RegistroInfo(20, VIGENCIA_ACTIVA, {}),
+    definicion = _definicion("operadores")
+
+    # Act
+    config = ui.configuracion_columnas(definicion, ["Certificación", "Cancelación"])
+
+    # Assert
+    assert config[ETIQUETA_ESTADO]["type_config"]["type"] == "selectbox"
+    assert list(config[ETIQUETA_ESTADO]["type_config"]["options"]) == [
+        OPCION_VIGENTE,
+        OPCION_ANULADO,
+    ]
+    assert list(config["Género"]["type_config"]["options"]) == list(GENEROS_VALIDOS)
+
+
+def test_configuracion_columnas_evento_usa_el_catalogo() -> None:
+    """CA-01/S-04: la columna de evento ofrece los tipos de ``dim_tipo_evento``."""
+    # Arrange / Act
+    config = ui.configuracion_columnas(_definicion("eventos"), ["Certificación", "Cancelación"])
+
+    # Assert
+    assert "Evento" in config
+    assert list(config["Evento"]["type_config"]["options"]) == ["Certificación", "Cancelación"]
+
+
+def test_detectar_cambios_extrae_las_celdas_modificadas() -> None:
+    """CA-01: solo las celdas editables modificadas producen cambios."""
+    # Arrange
+    original: list[dict[str, object]] = [
+        {"ID": 1, "Código": 5001, "Nombre": "Ana", "Tipo": "C3", ETIQUETA_ESTADO: OPCION_VIGENTE}
+    ]
+    editado: list[dict[str, object]] = [
+        {"ID": 1, "Código": 5002, "Nombre": "Otra", "Tipo": "C3", ETIQUETA_ESTADO: OPCION_ANULADO}
     ]
 
+    # Act
+    cambios = ui.detectar_cambios(_definicion("licencias"), original, editado)
+
+    # Assert
+    assert CambioRegistro(1, "Código", 5002) in cambios
+    assert CambioRegistro(1, ETIQUETA_ESTADO, OPCION_ANULADO) in cambios
+    assert all(cambio.etiqueta != "Nombre" for cambio in cambios)
+
+
+def test_detectar_cambios_sin_diferencias_devuelve_vacio() -> None:
+    """CA-01: sin diferencias no hay cambios que guardar."""
+    # Arrange
+    original: list[dict[str, object]] = [{"ID": 1, "Código": 5001, ETIQUETA_ESTADO: OPCION_VIGENTE}]
+    editado: list[dict[str, object]] = [{"ID": 1, "Código": 5001, ETIQUETA_ESTADO: OPCION_VIGENTE}]
+
     # Act / Assert
-    assert ui.ids_seleccionados(registros, [1, 0]) == [20, 10]
-    assert ui.ids_seleccionados(registros, [5]) == []
+    assert ui.detectar_cambios(_definicion("eventos"), original, editado) == []
+
+
+def test_ids_eliminados_detecta_filas_removidas() -> None:
+    """CA-02: las filas ausentes del editor se reportan como eliminadas."""
+    # Arrange
+    original: list[dict[str, object]] = [{"ID": 1}, {"ID": 2}, {"ID": 3}]
+    editado: list[dict[str, object]] = [{"ID": 2}]
+
+    # Act / Assert
+    assert ui.ids_eliminados(original, editado) == [1, 3]
+
+
+def test_opciones_evento_elimina_duplicados() -> None:
+    """Las opciones de evento conservan el orden y descartan repetidos."""
+    # Arrange / Act / Assert
+    assert ui.opciones_evento(["Certificación", "Cancelación", "Certificación"]) == [
+        "Certificación",
+        "Cancelación",
+    ]
 
 
 def test_puede_eliminar_solo_super_admin() -> None:
@@ -700,6 +970,17 @@ def test_paquete_correccion_registros_existe() -> None:
     assert callable(render_correccion_registros)
 
 
+def test_repositorio_expone_los_metodos_de_seguridad() -> None:
+    """CA-02/CA-03: el repositorio expone las validaciones de la spec 017."""
+    # Arrange / Act / Assert
+    for nombre in (
+        "contar_dependencias_operador",
+        "validar_codigo_existe",
+        "actualizar_registros_seguros",
+    ):
+        assert callable(getattr(EventosRepository, nombre))
+
+
 def test_ui_organiza_la_correccion_en_subtabs_por_tabla() -> None:
     """CA-01: la UI construye las sub-pestañas a partir del catálogo de tablas."""
     # Arrange
@@ -714,14 +995,16 @@ def test_ui_organiza_la_correccion_en_subtabs_por_tabla() -> None:
     assert etiquetas == set(ETIQUETAS_TABLAS)
 
 
-def test_ui_usa_tabla_interactiva_con_seleccion_multiple() -> None:
-    """CA-03: la tabla habilita la selección múltiple nativa de Streamlit."""
+def test_ui_usa_editor_tipo_excel_con_columnas_protegidas() -> None:
+    """CA-01: la UI usa ``st.data_editor`` con listas y columnas protegidas."""
     # Arrange
     contenido = _RUTA_UI.read_text(encoding="utf-8")
 
     # Act / Assert
-    assert 'on_select="rerun"' in contenido
-    assert 'selection_mode="multi-row"' in contenido
+    assert "st.data_editor(" in contenido
+    assert "st.column_config.SelectboxColumn(" in contenido
+    assert "disabled=" in contenido
+    assert 'num_rows="delete"' in contenido
     assert "use_container_width=True" in contenido
 
 
@@ -735,17 +1018,16 @@ def test_ui_no_renderiza_filtros_externos_masivos() -> None:
         assert widget not in contenido
 
 
-def test_ui_expone_botones_de_accion_compactos() -> None:
-    """CA-04: la UI ofrece los botones de cambio de estado y eliminación."""
+def test_ui_expone_el_boton_de_guardado_y_delega_en_el_repositorio() -> None:
+    """CA-04: la UI ofrece Guardar Cambios y delega en el repositorio."""
     # Arrange
     contenido = _RUTA_UI.read_text(encoding="utf-8")
 
     # Act / Assert
-    assert ui.ETIQUETA_REACTIVAR in contenido
-    assert ui.ETIQUETA_ANULAR in contenido
-    assert ui.ETIQUETA_ELIMINAR in contenido
-    assert "mutar_vigencia(" in contenido
+    assert ui.ETIQUETA_GUARDAR in contenido
+    assert "actualizar_registros_seguros(" in contenido
     assert "eliminar_registros_tabla(" in contenido
+    assert "contar_dependencias_operador(" not in contenido
 
 
 def test_ui_no_contiene_sql_ni_acceso_directo() -> None:
