@@ -37,4 +37,4 @@ El objetivo es aplicar **defensa en profundidad**:
 3. Ajustar `ui.py` para proyectar columnas contextuales según el filtro activo.
 4. Escribir pruebas unitarias en `test_correccion_registros.py`.
 5. Ejecutar `uv run pytest` asegurando 100% verde.
-6. Actualizar `CONSTITUTION.md` y `docs/referencia-funciones.md`.
+6. **Documentación y comentarios:** Todos los métodos, clases, excepciones y constantes deben tener docstrings descriptivos en español. Incluir comentarios claros sobre la lógica de validación y actualizar `CONSTITUTION.md` y `docs/referencia-funciones.md`.
