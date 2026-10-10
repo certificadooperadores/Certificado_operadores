@@ -626,14 +626,27 @@ def _render_detalle_casos(repositorio: ComportamientosRepository, usuario: str) 
         return
 
     df_reinc = pd.DataFrame(filas_reincidencias(reincidencias))
-    caso_filtro = st.selectbox(
-        "Filtrar por Caso",
-        ["Todos", *df_reinc["id_reincidencia"].astype(str).tolist()],
-        key="reinc_caso",
-    )
-    codigos = sorted(df_reinc["id_codigo"].dropna().astype(int).astype(str).unique().tolist())
-    cod_filtro = st.selectbox("Filtrar por Código", ["Todos", *codigos], key="reinc_cod")
-    emp_filtro = st.selectbox("Filtrar por Empresa", emp_opts, key="reinc_emp")
+
+    col_emp, col_cod, col_caso, col_lim, col_exp = st.columns([2.5, 2, 2, 2, 2.5])
+    with col_emp:
+        emp_filtro = st.selectbox("Empresa", emp_opts, key="reinc_emp")
+    with col_cod:
+        codigos = sorted(df_reinc["id_codigo"].dropna().astype(int).astype(str).unique().tolist())
+        cod_filtro = st.selectbox("Código", ["Todos", *codigos], key="reinc_cod")
+    with col_caso:
+        caso_filtro = st.selectbox(
+            "Caso",
+            ["Todos", *df_reinc["id_reincidencia"].astype(str).tolist()],
+            key="reinc_caso",
+        )
+    with col_lim:
+        limite_casos = st.selectbox(
+            "Mostrar",
+            [10, 20, 50, 100],
+            index=1,
+            key="reinc_limite",
+        )
+
     if caso_filtro != "Todos":
         df_reinc = df_reinc[df_reinc["id_reincidencia"].astype(str) == caso_filtro]
     if cod_filtro != "Todos":
@@ -647,21 +660,22 @@ def _render_detalle_casos(repositorio: ComportamientosRepository, usuario: str) 
     if not df_detalle.empty and emp_filtro != "Todas":
         df_detalle = df_detalle[df_detalle["nombre_empresa"] == emp_filtro]
 
-    if not df_detalle.empty:
-        salida = io.BytesIO()
-        with pd.ExcelWriter(salida, engine="openpyxl") as escritor:
-            df_detalle.to_excel(escritor, index=False, sheet_name="Detalle Reincidencia")
-        st.download_button(
-            "⬇️ Exportar Detalle a Excel",
-            data=salida.getvalue(),
-            file_name=f"reincidencia_detalle_{emp_filtro}.xlsx",
-            mime=TIPO_MIME_EXCEL,
-            key="export_reinc",
-        )
+    with col_exp:
+        if not df_detalle.empty:
+            salida = io.BytesIO()
+            with pd.ExcelWriter(salida, engine="openpyxl") as escritor:
+                df_detalle.to_excel(escritor, index=False, sheet_name="Detalle Reincidencia")
+            st.download_button(
+                "⬇️ Exportar Excel",
+                data=salida.getvalue(),
+                file_name=f"reincidencia_detalle_{emp_filtro}.xlsx",
+                mime=TIPO_MIME_EXCEL,
+                key="export_reinc",
+                use_container_width=True,
+            )
 
-    limite_casos = st.slider("Casos a mostrar", 5, min(100, len(df_reinc)), 20, key="reinc_limite")
-    st.markdown(
-        f"**{len(df_reinc)} casos** para empresa: {emp_filtro} (mostrando últimos {limite_casos})"
+    st.caption(
+        f"**{len(df_reinc)} caso(s)** encontrados (mostrando {min(limite_casos, len(df_reinc))})"
     )
     for _, rw in df_reinc.head(limite_casos).iterrows():
         _render_caso(rw, df_detalle, usuario, repositorio)
@@ -902,16 +916,21 @@ def _render_reincidencia(repositorio: ComportamientosRepository, usuario: str) -
         repositorio: Repositorio de comportamientos inyectado.
         usuario: Usuario de la sesión (para auditoría).
     """
-    st.markdown("### 🔁 Reincidencia de Comportamientos")
-    st.markdown(
-        "Evalúa si un operador ha incurrido en comportamientos reincidentes "
-        "según las reglas de impacto."
-    )
-    _render_evaluacion(repositorio, usuario)
+    col_tit, col_btn = st.columns([3, 1])
+    with col_tit:
+        st.markdown("### 🔁 Reincidencia de Comportamientos")
+        st.caption(
+            "Evalúa si un operador ha incurrido en comportamientos reincidentes "
+            "según las reglas de impacto."
+        )
+    with col_btn:
+        _render_evaluacion(repositorio, usuario)
+
+    with st.expander("📥 Importar Acciones desde Excel (opcional)", expanded=False):
+        _render_importar_acciones(repositorio, usuario)
+
     st.markdown("---")
     _render_detalle_casos(repositorio, usuario)
-    st.markdown("---")
-    _render_importar_acciones(repositorio, usuario)
 
 
 def render_reporte_comportamientos(repositorio: ComportamientosRepository | None = None) -> None:

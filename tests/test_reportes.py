@@ -567,7 +567,7 @@ def test_ejecutar_reporte_operadores_empresa(repositorio: ReportesRepository) ->
     # Assert
     assert list(resultado.columns) == ["Empresa", "Tipologia", "Codigos"]
     assert resultado.to_dict(orient="records") == [
-        {"Empresa": "Empresa A", "Tipologia": "Articulado, Padron", "Codigos": 2}
+        {"Empresa": "Empresa A", "Tipologia": "Articulado", "Codigos": 2}
     ]
 
 

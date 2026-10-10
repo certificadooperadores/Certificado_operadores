@@ -102,26 +102,17 @@ _SUBCONSULTA_CANCELACION = (
     "SELECT id_codigo FROM fact_eventos_operador WHERE id_tipo_evento = :cancelacion"
 )
 
-# --- Nombre legible de tipología (spec 024, R-06) ----------------------------
-# ``dim_perfil_tipologia`` no expone una columna de nombre: la tipología se
-# compone de las autorizaciones habilitadas (articulado, padrón, complementario
-# y auxiliar). Esta expresión concatena, en SQLite, solo las etiquetas activas y
-# recorta la coma final, produciendo un nombre legible (``Articulado, Padron``)
-# en lugar del identificador numérico. No suma ni filtra identificadores.
-_ETIQUETAS_TIPOLOGIA = (
-    "RTRIM("
-    "CASE WHEN t.autoriza_articulado = 1 THEN 'Articulado, ' ELSE '' END || "
-    "CASE WHEN t.autoriza_padron = 1 THEN 'Padron, ' ELSE '' END || "
-    "CASE WHEN t.autoriza_complementario = 1 THEN 'Complementario, ' ELSE '' END || "
-    "CASE WHEN t.autoriza_auxiliar = 1 THEN 'Auxiliar, ' ELSE '' END, "
-    "', ')"
-)
-
-# Columna ``Tipologia`` del reporte: si una tipología no tiene autorizaciones
-# activas (dato residual), se degrada a su identificador en lugar de quedar vacía.
+# Jerarquía de tipología solicitada por el usuario:
+# [Articulado, Padron, Complementario] = Articulado
+# [Padron, Complementario] = Padrón
+# Complementario = Complementario
 _COLUMNA_TIPOLOGIA = (
-    f"CASE WHEN {_ETIQUETAS_TIPOLOGIA} = '' "
-    f"THEN CAST(t.id_perfil_tipologia AS TEXT) ELSE {_ETIQUETAS_TIPOLOGIA} END"
+    "CASE "
+    "WHEN t.autoriza_articulado = 1 THEN 'Articulado' "
+    "WHEN t.autoriza_padron = 1 THEN 'Padrón' "
+    "WHEN t.autoriza_complementario = 1 THEN 'Complementario' "
+    "ELSE 'Sin Tipología' "
+    "END"
 )
 
 
@@ -359,6 +350,7 @@ _REPORTES: tuple[_Reporte, ...] = (
             "Codigo",
             "Cedula",
             "Nombre",
+            "Tipologia",
             "Tipo Licencia",
             "Vencimiento",
             "Dias Restantes",
@@ -367,6 +359,12 @@ _REPORTES: tuple[_Reporte, ...] = (
             SELECT e.nombre_empresa AS "Empresa", l.id_codigo AS "Codigo",
                    c.id_persona AS "Cedula",
                    (p.nombres || ' ' || p.primer_apellido) AS "Nombre",
+                   CASE
+                       WHEN t.autoriza_articulado = 1 THEN 'Articulado'
+                       WHEN t.autoriza_padron = 1 THEN 'Padrón'
+                       WHEN t.autoriza_complementario = 1 THEN 'Complementario'
+                       ELSE 'Sin Tipología'
+                   END AS "Tipologia",
                    l.tipo AS "Tipo Licencia", DATE(l.vencimiento) AS "Vencimiento",
                    CAST(ROUND(JULIANDAY(l.vencimiento) - JULIANDAY('now')) AS INTEGER)
                        AS "Dias Restantes"
@@ -374,6 +372,8 @@ _REPORTES: tuple[_Reporte, ...] = (
             LEFT JOIN dim_codigo c ON l.id_codigo = c.id_codigo
             LEFT JOIN dim_persona p ON c.id_persona = p.id_persona
             LEFT JOIN dim_empresa e ON c.id_empresa = e.id_empresa
+            LEFT JOIN dim_perfil_tipologia t
+                ON c.id_perfil_tipologia = t.id_perfil_tipologia
             WHERE 1=1 AND l.vencimiento IS NOT NULL
         """,
         filtros=(
@@ -455,6 +455,7 @@ _REPORTES: tuple[_Reporte, ...] = (
         nombre="Comportamientos por Operador",
         descripcion="Comportamientos registrados por operador en un rango de fechas.",
         columnas=(
+            "Empresa",
             "Codigo",
             "Cedula",
             "Nombre",
@@ -465,7 +466,8 @@ _REPORTES: tuple[_Reporte, ...] = (
             "Ruta",
         ),
         consulta="""
-            SELECT f.id_codigo AS "Codigo", c.id_persona AS "Cedula",
+            SELECT COALESCE(em.nombre_empresa, 'Sin Concesionario') AS "Empresa",
+                   f.id_codigo AS "Codigo", c.id_persona AS "Cedula",
                    (p.nombres || ' ' || p.primer_apellido) AS "Nombre",
                    d.descripcion_comportamiento AS "Descripcion",
                    f.caso_bitacora_ticket AS "Caso", f.fecha_evento AS "Fecha",
@@ -474,9 +476,11 @@ _REPORTES: tuple[_Reporte, ...] = (
             LEFT JOIN dim_detalle_comportamiento d ON f.id_jerarquia = d.id_jerarquia
             LEFT JOIN dim_codigo c ON f.id_codigo = c.id_codigo
             LEFT JOIN dim_persona p ON c.id_persona = p.id_persona
+            LEFT JOIN dim_empresa em ON c.id_empresa = em.id_empresa
             WHERE 1=1
         """,
         filtros=(
+            _FiltroReporte("empresa", "c.id_empresa", "Empresa"),
             _FiltroReporte("codigo", "f.id_codigo", "Código de Operador"),
             _FiltroReporte("fecha", "DATE(f.fecha_evento)", "Rango de fechas"),
         ),
@@ -493,6 +497,7 @@ _REPORTES: tuple[_Reporte, ...] = (
             "Codigo",
             "Cedula",
             "Nombre",
+            "Tipologia",
             "Ultimo Evento",
             "Fecha Certificado",
             "Vencimiento",
@@ -502,6 +507,12 @@ _REPORTES: tuple[_Reporte, ...] = (
             SELECT em.nombre_empresa AS "Empresa", e.id_codigo AS "Codigo",
                    c.id_persona AS "Cedula",
                    (p.nombres || ' ' || p.primer_apellido) AS "Nombre",
+                   CASE
+                       WHEN t.autoriza_articulado = 1 THEN 'Articulado'
+                       WHEN t.autoriza_padron = 1 THEN 'Padrón'
+                       WHEN t.autoriza_complementario = 1 THEN 'Complementario'
+                       ELSE 'Sin Tipología'
+                   END AS "Tipologia",
                    te.nombre_evento AS "Ultimo Evento",
                    DATE(e.fecha_certificado) AS "Fecha Certificado",
                    {_COL_VENCIMIENTO_CERTIFICADO} AS "Vencimiento",
@@ -512,6 +523,8 @@ _REPORTES: tuple[_Reporte, ...] = (
             LEFT JOIN dim_persona p ON c.id_persona = p.id_persona
             LEFT JOIN dim_tipo_evento te ON e.id_tipo_evento = te.id_tipo_evento
             LEFT JOIN dim_empresa em ON c.id_empresa = em.id_empresa
+            LEFT JOIN dim_perfil_tipologia t
+                ON c.id_perfil_tipologia = t.id_perfil_tipologia
             WHERE 1=1 AND e.rn = 1 AND c.id_codigo NOT IN (
                 SELECT id_codigo FROM fact_eventos_operador WHERE id_tipo_evento = 7)
         """,
@@ -533,6 +546,7 @@ _REPORTES: tuple[_Reporte, ...] = (
             "renovación) vencido hace más de 3 años."
         ),
         columnas=(
+            "Empresa",
             "Codigo",
             "Cedula",
             "Nombre",
@@ -542,7 +556,8 @@ _REPORTES: tuple[_Reporte, ...] = (
             "Dias Vencido",
         ),
         consulta=f"""
-            SELECT e.id_codigo AS "Codigo", c.id_persona AS "Cedula",
+            SELECT COALESCE(em.nombre_empresa, 'Sin Concesionario') AS "Empresa",
+                   e.id_codigo AS "Codigo", c.id_persona AS "Cedula",
                    (p.nombres || ' ' || p.primer_apellido) AS "Nombre",
                    te.nombre_evento AS "Ultimo Evento",
                    DATE(e.fecha_certificado) AS "Fecha Certificado",
@@ -554,11 +569,12 @@ _REPORTES: tuple[_Reporte, ...] = (
             LEFT JOIN dim_codigo c ON e.id_codigo = c.id_codigo
             LEFT JOIN dim_persona p ON c.id_persona = p.id_persona
             LEFT JOIN dim_tipo_evento te ON e.id_tipo_evento = te.id_tipo_evento
+            LEFT JOIN dim_empresa em ON c.id_empresa = em.id_empresa
             WHERE 1=1 AND e.rn = 1 AND {_COL_VENCIMIENTO_CERTIFICADO} < DATE('now')
               AND c.id_codigo NOT IN (
                 SELECT id_codigo FROM fact_eventos_operador WHERE id_tipo_evento = 7)
         """,
-        filtros=(),
+        filtros=(_FiltroReporte("empresa", "c.id_empresa", "Empresa"),),
     ),
 )
 

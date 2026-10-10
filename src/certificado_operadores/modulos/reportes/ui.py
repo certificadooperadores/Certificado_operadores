@@ -22,6 +22,7 @@ from datetime import date
 from pathlib import Path
 from typing import Any
 
+import altair as alt
 import pandas as pd
 import streamlit as st
 from matplotlib.figure import Figure
@@ -195,24 +196,35 @@ def calcular_kpis(id_reporte: str, df: pd.DataFrame) -> list[tuple[str, int]]:
             ("Críticas (< 30 días)", criticas),
             ("Concesionarios", concesionarios),
         ]
-    if id_reporte in ("certificados_vencer", "certificados_vencidos"):
-        columna_dias = "Dias Restantes" if id_reporte == "certificados_vencer" else "Dias Vencido"
-        etiqueta = (
-            "Próximos a Vencer (< 30 días)" if id_reporte == "certificados_vencer" else "Críticos"
-        )
-        criticos = int((df[columna_dias] <= DIAS_CRITICO).sum())
+    if id_reporte == "certificados_vencer":
+        criticos = int((df["Dias Restantes"] <= DIAS_CRITICO).sum())
+        concesionarios = int(df["Empresa"].nunique()) if "Empresa" in df.columns else 0
         operadores = int(df["Codigo"].nunique())
         return [
-            ("Total Certificados", len(df)),
-            (etiqueta, criticos),
+            ("Total por Vencer", len(df)),
+            ("Próximos a Vencer (< 30 días)", criticos),
+            ("Concesionarios Afectados", concesionarios),
             ("Operadores Únicos", operadores),
         ]
-    if id_reporte == "operadores_empresa":
-        total = int(df["Codigos"].sum())
-        concesionarios = int(df["Empresa"].nunique())
+    if id_reporte == "certificados_vencidos":
+        concesionarios = int(df["Empresa"].nunique()) if "Empresa" in df.columns else 0
+        operadores = int(df["Codigo"].nunique())
         return [
-            ("Total Operadores Activos", total),
-            ("Concesionarios Activos", concesionarios),
+            ("Total Certificados Vencidos", len(df)),
+            ("Concesionarios Afectados", concesionarios),
+            ("Operadores Vencidos", operadores),
+        ]
+    if id_reporte == "operadores_empresa":
+        total = int(df["Codigos"].sum()) if "Codigos" in df.columns else len(df)
+        tiene_cols = "Tipologia" in df.columns and "Codigos" in df.columns
+        art = int(df[df["Tipologia"] == "Articulado"]["Codigos"].sum()) if tiene_cols else 0
+        pad = int(df[df["Tipologia"] == "Padrón"]["Codigos"].sum()) if tiene_cols else 0
+        comp = int(df[df["Tipologia"] == "Complementario"]["Codigos"].sum()) if tiene_cols else 0
+        return [
+            ("Total Activos", total),
+            ("Articulado", art),
+            ("Padrón", pad),
+            ("Complementario", comp),
         ]
     if id_reporte == "reincidencias":
         pendientes = int(df["Determinacion"].apply(_determinacion_pendiente).sum())
@@ -223,12 +235,14 @@ def calcular_kpis(id_reporte: str, df: pd.DataFrame) -> list[tuple[str, int]]:
             ("Casos Graves", graves),
         ]
     if id_reporte == "comportamientos_operador":
-        vehiculos = int(df["Vehiculo"].nunique()) if "Vehiculo" in df.columns else 0
+        operadores = int(df["Codigo"].nunique()) if "Codigo" in df.columns else 0
         rutas = int(df["Ruta"].nunique()) if "Ruta" in df.columns else 0
+        vehiculos = int(df["Vehiculo"].nunique()) if "Vehiculo" in df.columns else 0
         return [
             ("Total Novedades", len(df)),
-            ("Vehículos Involucrados", vehiculos),
+            ("Operadores con Novedad", operadores),
             ("Rutas Afectadas", rutas),
+            ("Vehículos Involucrados", vehiculos),
         ]
     # Resto de reportes operacionales (p. ej. eventos por tipo): total simple.
     return [("Registros", len(df))]
@@ -460,15 +474,225 @@ def _render_exportacion(df: pd.DataFrame, definicion: DefinicionReporte) -> None
 
 
 def _render_gantt(df: pd.DataFrame, definicion: DefinicionReporte) -> None:
-    """Dibuja el diagrama de Gantt de vencimientos, solo para reportes de vencimiento.
+    """Dibuja el cronograma interactivo de vencimientos por quincenas y concesionario.
 
     Args:
         df: Datos del reporte ya ejecutado.
-        definicion: Reporte mostrado (define si aplica el Gantt).
+        definicion: Reporte mostrado (define si aplica el cronograma).
     """
     if definicion.id not in _REPORTES_GANTT:
         return
-    st.pyplot(generar_gantt_vencimientos(df))
+    if df is None or df.empty or "Empresa" not in df.columns or "Dias Restantes" not in df.columns:
+        return
+
+    st.markdown("#### 📅 Cronograma Interactivo de Vencimientos por Quincena")
+    copia = df.copy()
+    copia["Dias Restantes"] = pd.to_numeric(copia["Dias Restantes"], errors="coerce").fillna(0)
+
+    # Agrupar en ventanas quincenales cada 15 días
+    def _agrupar_quincena(dias: float) -> str:
+        if dias <= 15:
+            return "01. 0 a 15 días (Crítico)"
+        if dias <= 30:
+            return "02. 16 a 30 días (Crítico)"
+        if dias <= 45:
+            return "03. 31 a 45 días (Alerta)"
+        if dias <= 60:
+            return "04. 46 a 60 días (Alerta)"
+        if dias <= 90:
+            return "05. 61 a 90 días"
+        return "06. Más de 90 días"
+
+    copia["Ventana Vencimiento"] = copia["Dias Restantes"].apply(_agrupar_quincena)
+
+    # Resumen agrupado para el gráfico
+    resumen = copia.groupby(["Empresa", "Ventana Vencimiento"]).size().reset_index(name="Cantidad")
+
+    color_scale = alt.Scale(
+        domain=[
+            "01. 0 a 15 días (Crítico)",
+            "02. 16 a 30 días (Crítico)",
+            "03. 31 a 45 días (Alerta)",
+            "04. 46 a 60 días (Alerta)",
+            "05. 61 a 90 días",
+            "06. Más de 90 días",
+        ],
+        range=["#DC2626", "#EF4444", "#F59E0B", "#FBBF24", "#3B82F6", "#10B981"],
+    )
+
+    chart = (
+        alt.Chart(resumen)
+        .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
+        .encode(
+            x=alt.X("Cantidad:Q", title="Cantidad de Vencimientos"),
+            y=alt.Y("Empresa:N", title="Concesionario", sort="-x"),
+            color=alt.Color("Ventana Vencimiento:N", scale=color_scale, title="Ventana"),
+            tooltip=[
+                alt.Tooltip("Empresa:N", title="Concesionario"),
+                alt.Tooltip("Ventana Vencimiento:N", title="Ventana"),
+                alt.Tooltip("Cantidad:Q", title="Total"),
+            ],
+        )
+        .properties(height=260)
+    )
+    st.altair_chart(chart, use_container_width=True)
+    with st.expander("Ver cronograma estático tradicional (Matplotlib)", expanded=False):
+        st.pyplot(generar_gantt_vencimientos(df))
+
+
+def _render_graficos_analiticos(df: pd.DataFrame, definicion: DefinicionReporte) -> None:
+    """Muestra visualizaciones gráficas interactivas según el reporte seleccionado.
+
+    Args:
+        df: Datos del reporte ya ejecutado.
+        definicion: Reporte mostrado.
+    """
+    if df is None or df.empty:
+        return
+
+    if definicion.id == "operadores_empresa":
+        st.markdown("#### 📊 Distribución de Operadores Activos")
+        col_graf1, col_graf2 = st.columns(2)
+        with col_graf1:
+            st.markdown("**Activos por Concesionario**")
+            res_emp = df.groupby("Empresa")["Codigos"].sum().reset_index(name="Total")
+            chart_emp = (
+                alt.Chart(res_emp)
+                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#1E3A8A")
+                .encode(
+                    x=alt.X("Total:Q", title="Operadores Activos"),
+                    y=alt.Y("Empresa:N", title="Concesionario", sort="-x"),
+                    tooltip=[
+                        alt.Tooltip("Empresa:N", title="Concesionario"),
+                        alt.Tooltip("Total:Q", title="Total Activos"),
+                    ],
+                )
+                .properties(height=240)
+            )
+            st.altair_chart(chart_emp, use_container_width=True)
+
+        with col_graf2:
+            st.markdown("**Activos por Tipología**")
+            res_tip = df.groupby("Tipologia")["Codigos"].sum().reset_index(name="Total")
+            chart_tip = (
+                alt.Chart(res_tip)
+                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#0284C7")
+                .encode(
+                    x=alt.X("Total:Q", title="Operadores Activos"),
+                    y=alt.Y("Tipologia:N", title="Tipología", sort="-x"),
+                    tooltip=[
+                        alt.Tooltip("Tipologia:N", title="Tipología"),
+                        alt.Tooltip("Total:Q", title="Total Activos"),
+                    ],
+                )
+                .properties(height=240)
+            )
+            st.altair_chart(chart_tip, use_container_width=True)
+
+    elif definicion.id == "certificados_vencidos":
+        st.markdown("#### 🚨 Certificados Vencidos por Concesionario")
+        res_venc = df.groupby("Empresa").size().reset_index(name="Vencidos")
+        chart_venc = (
+            alt.Chart(res_venc)
+            .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#DC2626")
+            .encode(
+                x=alt.X("Vencidos:Q", title="Total Certificados Vencidos"),
+                y=alt.Y("Empresa:N", title="Concesionario", sort="-x"),
+                tooltip=[
+                    alt.Tooltip("Empresa:N", title="Concesionario"),
+                    alt.Tooltip("Vencidos:Q", title="Certificados Vencidos"),
+                ],
+            )
+            .properties(height=240)
+        )
+        st.altair_chart(chart_venc, use_container_width=True)
+
+    elif definicion.id == "comportamientos_operador":
+        st.markdown("#### 📈 Analítica de Comportamientos y Operación")
+        col_c1, col_c2, col_c3 = st.columns(3)
+        with col_c1:
+            st.markdown("**Top 10 Operadores con más Novedades**")
+            top_ops = (
+                df.groupby(["Codigo", "Nombre"])
+                .size()
+                .reset_index(name="Novedades")
+                .sort_values(by="Novedades", ascending=False)
+                .head(10)
+            )
+            top_ops["Operador"] = (
+                top_ops["Codigo"].astype(str) + " - " + top_ops["Nombre"].astype(str)
+            )
+            chart_ops = (
+                alt.Chart(top_ops)
+                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#D97706")
+                .encode(
+                    x=alt.X("Novedades:Q", title="Total Novedades"),
+                    y=alt.Y("Operador:N", title="Operador", sort="-x"),
+                    tooltip=[
+                        alt.Tooltip("Operador:N", title="Operador"),
+                        alt.Tooltip("Novedades:Q", title="Novedades"),
+                    ],
+                )
+                .properties(height=280)
+            )
+            st.altair_chart(chart_ops, use_container_width=True)
+
+        with col_c2:
+            st.markdown("**Causales Más Frecuentes**")
+            copia_comp = df.copy()
+
+            # Extraer la causal raíz o nivel clave después de ::
+            def _extraer_causal(desc: str) -> str:
+                partes = [p.strip() for p in str(desc).split("::") if p.strip()]
+                return partes[-1].capitalize() if partes else "Sin causal"
+
+            copia_comp["Causal"] = copia_comp["Descripcion"].apply(_extraer_causal)
+            top_causas = (
+                copia_comp.groupby("Causal")
+                .size()
+                .reset_index(name="Casos")
+                .sort_values(by="Casos", ascending=False)
+                .head(8)
+            )
+            chart_causas = (
+                alt.Chart(top_causas)
+                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#4F46E5")
+                .encode(
+                    x=alt.X("Casos:Q", title="Frecuencia"),
+                    y=alt.Y("Causal:N", title="Causal", sort="-x"),
+                    tooltip=[
+                        alt.Tooltip("Causal:N", title="Causal"),
+                        alt.Tooltip("Casos:Q", title="Casos"),
+                    ],
+                )
+                .properties(height=280)
+            )
+            st.altair_chart(chart_causas, use_container_width=True)
+
+        with col_c3:
+            st.markdown("**Top 10 Rutas con Más Novedades**")
+            top_rutas = (
+                df[df["Ruta"].notna() & (df["Ruta"] != "")]
+                .groupby("Ruta")
+                .size()
+                .reset_index(name="Eventos")
+                .sort_values(by="Eventos", ascending=False)
+                .head(10)
+            )
+            chart_rutas = (
+                alt.Chart(top_rutas)
+                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#059669")
+                .encode(
+                    x=alt.X("Eventos:Q", title="Eventos"),
+                    y=alt.Y("Ruta:N", title="Ruta", sort="-x"),
+                    tooltip=[
+                        alt.Tooltip("Ruta:N", title="Ruta"),
+                        alt.Tooltip("Eventos:Q", title="Eventos"),
+                    ],
+                )
+                .properties(height=280)
+            )
+            st.altair_chart(chart_rutas, use_container_width=True)
 
 
 def _render_resultado(
@@ -495,9 +719,10 @@ def _render_resultado(
         st.info(MENSAJE_SIN_RESULTADOS)
         return
     _render_kpis(df, definicion)
+    _render_graficos_analiticos(df, definicion)
+    _render_gantt(df, definicion)
     _render_exportacion(df, definicion)
     st.dataframe(df, use_container_width=True, hide_index=True)
-    _render_gantt(df, definicion)
     repositorio.registrar_exportacion(usuario, definicion.nombre, len(df))
 
 
