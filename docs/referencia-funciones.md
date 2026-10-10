@@ -22,6 +22,8 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `gestion_usuarios` | `src/certificado_operadores/modulos/gestion_usuarios/ui.py` | Interfaz Streamlit de gestión de usuarios; consume el Facade y no contiene SQL. |
 | `infra.backup_service` | `src/certificado_operadores/infra/backup_service.py` | Servicio de copias de seguridad de SQLite; encapsula el sistema de archivos. |
 | `administrar_backups` | `src/certificado_operadores/modulos/administrar_backups/ui.py` | Interfaz Streamlit de backups; consume `BackupService` y no contiene SO ni SQL. |
+| `infra.eventos_repository` | `src/certificado_operadores/infra/eventos_repository.py` | Acceso a datos de `fact_eventos_operador`: filtros, lotes y mutaciones con auditoría (SQLAlchemy). |
+| `correccion_registros` | `src/certificado_operadores/modulos/correccion_registros/ui.py` | Interfaz Streamlit de corrección de registros; consume `EventosRepository` y no contiene SQL. |
 
 ## Funciones
 
@@ -248,6 +250,79 @@ Punto de entrada: `src/certificado_operadores/pages/1_Configuracion.py` (importa
   por variable de entorno); funciones puras de la UI (`filas_backups`); y
   criterios estáticos (paquete CA-01, UI sin SO ni SQL CA-03/RNF-01, página con
   `render_administrar_backups` y sin `exec` CA-02/RNF-02). Patrón AAA.
+
+### Módulo `infra.eventos_repository` — `src/certificado_operadores/infra/eventos_repository.py`
+
+Repositorio de eventos de operadores (spec 006). Encapsula todo el acceso a
+`fact_eventos_operador` y sus dimensiones: búsqueda con filtros, listado de
+tipos de evento, agrupamiento por lote (minuto de cargue) y mutaciones de
+reactivación, anulación y eliminación de registros o lotes. Cada mutación
+registra su acción en `log_auditoria` dentro de la misma transacción.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `EventosRepository.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa el repositorio inyectando el motor. | — |
+| `EventosRepository.motor` | `propiedad -> Engine` | Motor SQLAlchemy (inyectado o resuelto de `db.get_engine`). | `Engine` |
+| `EventosRepository.listar_tipos_evento` | `() -> list[TipoEventoInfo]` | Lista los tipos de evento ordenados por id. | `list[TipoEventoInfo]` |
+| `EventosRepository.buscar_eventos` | `(filtro: FiltroEventos \| None = None) -> list[EventoInfo]` | RF-01: filtra por código, cédula, tipo, vigencia y rango de fechas. | `list[EventoInfo]` |
+| `EventosRepository.listar_lotes` | `() -> list[LoteInfo]` | RF-02: agrupa los eventos por minuto de cargue. | `list[LoteInfo]` |
+| `EventosRepository.listar_eventos_de_lote` | `(lote: str) -> list[EventoInfo]` | RF-02: detalle de los eventos de un lote. | `list[EventoInfo]` |
+| `EventosRepository.reactivar_registros` | `(ids: list[int], usuario: str) -> int` | CA-03: reactiva registros y audita. | `int` |
+| `EventosRepository.anular_registros` | `(ids: list[int], usuario: str) -> int` | CA-03: anula registros y audita. | `int` |
+| `EventosRepository.eliminar_registros` | `(ids: list[int], usuario: str) -> int` | CA-03: elimina registros y audita. | `int` |
+| `EventosRepository.reactivar_lote` | `(lote: str, usuario: str) -> int` | RF-02: reactiva el lote completo y audita. | `int` |
+| `EventosRepository.anular_lote` | `(lote: str, usuario: str) -> int` | RF-02: anula el lote completo y audita. | `int` |
+| `EventosRepository.eliminar_lote` | `(lote: str, usuario: str) -> int` | RF-02: elimina el lote completo y audita. | `int` |
+| `EventosRepository.registrar_auditoria` | `(usuario, accion, detalles) -> None` | Registra una acción en `log_auditoria`. | — |
+| `_mapear_evento` | `(fila: RowMapping) -> EventoInfo` | Mapea una fila de eventos al DTO. | `EventoInfo` |
+| `_condiciones_y_parametros` | `(filtro: FiltroEventos) -> tuple[list[str], dict[str, object]]` | Traduce el filtro a condiciones y parámetros enlazados. | `tuple` |
+
+DTOs: `TipoEventoInfo`, `EventoInfo`, `LoteInfo`, `FiltroEventos`. Constantes:
+`LIMITE_POR_DEFECTO`, `FORMATO_LOTE`, `ESTADO_VIGENTE_TEXTO`,
+`ESTADO_ANULADO_TEXTO` y las acciones de auditoría `ACCION_*`.
+
+### Módulo `correccion_registros` — `src/certificado_operadores/modulos/correccion_registros/ui.py`
+
+Interfaz de Streamlit de corrección de registros (spec 006). Página delgada:
+filtra eventos y delega reactivar, anular y eliminar (individuales o por lote)
+en `EventosRepository`. No contiene sentencias SQL (RNF-01) ni conoce el esquema
+(RNF-02).
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `parsear_entero_positivo` | `(texto: str) -> int \| None` | Convierte el texto de un campo en un entero positivo. | `int` o `None` |
+| `opciones_tipos_evento` | `(tipos: list[TipoEventoInfo]) -> list[str]` | Construye las opciones "id - nombre" del selector. | `list[str]` |
+| `id_tipo_evento_desde_opcion` | `(opcion: str) -> int \| None` | Extrae el id del tipo de evento de la opción. | `int` o `None` |
+| `vigencia_desde_estado` | `(estado: str) -> int \| None` | Traduce la opción de estado a la vigencia. | `int` o `None` |
+| `construir_filtro` | `(codigo, cedula, tipo_evento, estado, fecha_desde, fecha_hasta) -> FiltroEventos` | Traduce los campos del formulario a un filtro. | `FiltroEventos` |
+| `etiqueta_lote` | `(lote: LoteInfo) -> str` | Etiqueta "YYYY-MM-DD HH:MM (n reg.)" del selector. | `str` |
+| `lote_desde_etiqueta` | `(etiqueta: str) -> str` | Recupera la marca temporal de la etiqueta. | `str` |
+| `filas_eventos` | `(eventos: list[EventoInfo]) -> list[dict[str, object]]` | Mapea los DTOs a filas legibles para `st.dataframe`. | `list[dict]` |
+| `filas_seleccionadas` | `(seleccion: object) -> list[int]` | Extrae los índices marcados en la tabla. | `list[int]` |
+| `puede_eliminar` | `(rol: str) -> bool` | Indica si el rol puede eliminar (solo Super Admin). | `bool` |
+| `_como_fecha` | `(valor: object) -> date \| None` | Normaliza el valor de `st.date_input` a fecha. | `date` o `None` |
+| `render_correccion_registros` | `(repositorio: EventosRepository \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
+
+Constantes: `ETIQUETA_TODOS`, `OPCION_VIGENTE`, `OPCION_ANULADO`,
+`OPCIONES_ESTADO`, `SEPARADOR_OPCION`, `SEPARADOR_ETIQUETA_LOTE`. Punto de
+entrada: `src/certificado_operadores/pages/1_Configuracion.py` (importa
+`render_correccion_registros` y lo invoca en la pestaña de corrección). El
+módulo heredado `modulos/3_Modificacion_Tablas.py` quedó **deprecado** como
+redirección a esta interfaz.
+
+### Módulo `correccion_registros` — pruebas
+
+- **Ubicación:** `tests/test_correccion_registros.py`
+- **Cobertura:** repositorio contra SQLite temporal (tipos de evento, búsqueda
+  por código/cédula/tipo/vigencia/rango de fechas y límite, lotes y su detalle,
+  reactivar/anular/eliminar individual y por lote con auditoría, selección
+  vacía); funciones puras de la UI (`parsear_entero_positivo`,
+  `opciones_tipos_evento`, `id_tipo_evento_desde_opcion`,
+  `vigencia_desde_estado`, `construir_filtro`, `etiqueta_lote`/`lote_desde_etiqueta`,
+  `filas_eventos`, `filas_seleccionadas`, `puede_eliminar`); y criterios
+  estáticos (paquete CA-01, UI sin SQL CA-02/RNF-01, página sin funciones
+  inlined con `render_correccion_registros` CA-02, módulo heredado deprecado sin
+  SQL). Patrón AAA.
 
 ## Detalle
 
