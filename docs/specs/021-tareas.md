@@ -5,7 +5,7 @@
 | Spec    | [`021-spec.md`](./021-spec.md)                                       |
 | Plan    | [`021-plan.md`](./021-plan.md)                                       |
 | Rama    | `feat/eliminar-warnings-sqlite`                                      |
-| Estado  | en progreso                                                          |
+| Estado  | completado                                         |
 
 ## Lista de tareas
 
