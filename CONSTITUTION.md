@@ -72,6 +72,7 @@ certificado-operadores/
 │   │   ├── catalogos_repository.py # repositorio de los cinco catálogos (dim_*)
 │   │   ├── certificados_repository.py # repositorio de eventos y certificados (fact_eventos_operador)
 │   │   ├── comportamientos_repository.py # repositorio de comportamientos y reincidencia
+│   │   ├── reportes_repository.py # repositorio de reportes y exportaciones
 │   │   ├── backup_service.py      # copias de seguridad de SQLite (sistema de archivos)
 │   │   └── seguridad.py           # hashing de contraseñas (bcrypt)
 │   ├── modulos/                   # un módulo de UI por carpeta (p. ej. admin_operadores/)
@@ -87,6 +88,8 @@ certificado-operadores/
 │   │   │   └── ui.py              # interfaz de Streamlit; consume CertificadosRepository, sin SQL
 │   │   ├── reporte_comportamientos/
 │   │   │   └── ui.py              # interfaz de Streamlit; consume ComportamientosRepository, sin SQL
+│   │   ├── reportes/
+│   │   │   └── ui.py              # interfaz de Streamlit; consume ReportesRepository, sin SQL
 │   │   └── gestion_usuarios/
 │   │       └── ui.py              # interfaz de Streamlit; consume el Facade, sin SQL
 │   ├── pages/                     # puntos de entrada de Streamlit (páginas delgadas)
@@ -232,6 +235,7 @@ git push
 | 2026-10-09 | Extraer los catálogos a `modulos/catalogos/ui.py` con `CatalogosRepository` y eliminar el último `exec` de `pages/1_Configuracion.py` | Cumplir la spec 007: la UI no ejecuta SQL (Facade/Repositorio) y la página de configuración queda 100% desacoplada |
 | 2026-10-09 | Extraer la gestión de certificados a `modulos/gestion_certificados/ui.py` con `CertificadosRepository`, deprecar `modulos/6_Gestion_Certificados.py` y eliminar el `exec` de la pestaña 2 de `pages/2_Administracion_Operadores.py` | Cumplir la spec 008: cero SQL en la vista, registro individual y masivo desacoplados y encapsulados en el repositorio |
 | 2026-10-09 | Extraer el reporte de comportamientos a `modulos/reporte_comportamientos/ui.py` con `ComportamientosRepository` y eliminar el último `exec` de `pages/2_Administracion_Operadores.py` | Cumplir la spec 009: cero SQL en la vista (registro individual, carga masiva y reincidencia) y cierre de la Fase 2, con la página 100% libre de `exec` |
+| 2026-10-09 | Extraer reportes y exportaciones a `modulos/reportes/ui.py` con `ReportesRepository` y eliminar el último `exec` de `pages/3_Reportes.py` | Cumplir la spec 010: cero SQL en la vista, consultas y exportaciones encapsuladas en la infraestructura y cierre de la Fase 3 (todas las páginas maestras desacopladas) |
 
 ## 10. Notas y tareas pendientes
 

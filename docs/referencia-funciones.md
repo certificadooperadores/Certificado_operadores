@@ -30,6 +30,8 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `gestion_certificados` | `src/certificado_operadores/modulos/gestion_certificados/ui.py` | Interfaz Streamlit de gestión de certificados; consume `CertificadosRepository` y no contiene SQL. |
 | `infra.comportamientos_repository` | `src/certificado_operadores/infra/comportamientos_repository.py` | Acceso a datos del reporte de comportamientos: búsqueda de operador, registro individual/masivo y reincidencia con auditoría (SQLAlchemy). |
 | `reporte_comportamientos` | `src/certificado_operadores/modulos/reporte_comportamientos/ui.py` | Interfaz Streamlit del reporte de comportamientos; consume `ComportamientosRepository` y no contiene SQL. |
+| `infra.reportes_repository` | `src/certificado_operadores/infra/reportes_repository.py` | Acceso a datos de la vista de reportes: catálogos de filtros, consultas consolidadas y auditoría de exportaciones (SQLAlchemy). |
+| `reportes` | `src/certificado_operadores/modulos/reportes/ui.py` | Interfaz Streamlit de reportes y exportaciones; consume `ReportesRepository`, no contiene SQL ni `exec`. |
 
 ## Funciones
 
@@ -579,6 +581,70 @@ Constantes: `TITULO`, `USUARIO_POR_DEFECTO`, `NOMBRE_ARCHIVO_PLANTILLA`,
   criterios estáticos (paquete CA-01, UI sin SQL RNF-01, repositorio que
   encapsula la SQL CA-03, página sin `exec` con `render_reporte_comportamientos`
   CA-02/RNF-02). Patrón AAA.
+
+### Módulo `infra.reportes_repository` — `src/certificado_operadores/infra/reportes_repository.py`
+
+Repositorio de la capa de infraestructura que encapsula **todo** el acceso a
+datos de la vista de reportes (spec 010): los catálogos de filtros (empresas,
+tipologías, tipos de evento e impactos), las consultas consolidadas con sus
+filtros dinámicos (UTRYT, operadores por empresa, licencias/certificados por
+vencer, eventos, reincidencias y comportamientos), la auditoría de exportaciones
+y la construcción de Excel/CSV en memoria. Las columnas de los filtros viven
+aquí, nunca en la UI.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `ReportesRepository.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa el repositorio inyectando el motor. | — |
+| `ReportesRepository.motor` | `propiedad -> Engine` | Motor SQLAlchemy (inyectado o resuelto de `db.get_engine`). | `Engine` |
+| `ReportesRepository.listar_reportes` | `() -> tuple[DefinicionReporte, ...]` | RF-01: reportes disponibles con metadatos (sin SQL). | `tuple[DefinicionReporte, ...]` |
+| `ReportesRepository.listar_empresas` | `() -> list[EmpresaInfo]` | RF-01: empresas ordenadas por identificador. | `list[EmpresaInfo]` |
+| `ReportesRepository.listar_tipologias` | `() -> list[TipologiaInfo]` | RF-01: tipologías con su descripción legible. | `list[TipologiaInfo]` |
+| `ReportesRepository.listar_estados` | `() -> list[str]` | RF-01: etiquetas del filtro de estado. | `list[str]` |
+| `ReportesRepository.listar_tipos_evento` | `() -> list[TipoEventoInfo]` | RF-01: tipos de evento ordenados. | `list[TipoEventoInfo]` |
+| `ReportesRepository.listar_impactos` | `() -> list[ImpactoInfo]` | RF-01: impactos ordenados. | `list[ImpactoInfo]` |
+| `ReportesRepository.construir_condiciones` | `(id_reporte: str, seleccion: SeleccionFiltros) -> tuple[list[str], dict[str, object]]` | RF-02: traduce la selección a condiciones y parámetros SQL. | `(condiciones, parametros)` |
+| `ReportesRepository.ejecutar_reporte` | `(id_reporte: str, seleccion: SeleccionFiltros) -> pd.DataFrame` | RF-02: ejecuta el reporte con sus filtros. | `pd.DataFrame` |
+| `ReportesRepository.registrar_exportacion` | `(usuario: str, nombre_reporte: str, total: int) -> None` | RF-03: audita la exportación del reporte. | — |
+| `construir_descripcion_tipologia` | `(id_perfil_tipologia, articulado, padron, complementario, auxiliar) -> str` | Construye la descripción legible de una tipología. | `str` |
+| `construir_consulta` | `(consulta_base: str, condiciones: list[str]) -> str` | Inyecta las condiciones con `AND` sobre `WHERE 1=1`. | `str` |
+| `generar_excel` | `(df: pd.DataFrame, nombre: str) -> bytes` | Genera un libro Excel en memoria con hoja de resumen. | `bytes` |
+| `generar_csv` | `(df: pd.DataFrame) -> bytes` | Genera un CSV UTF-8 con BOM en memoria. | `bytes` |
+
+DTOs: `EmpresaInfo`, `TipologiaInfo`, `TipoEventoInfo`, `ImpactoInfo`,
+`DefinicionFiltro`, `DefinicionReporte` y `SeleccionFiltros` (entrada).
+Constantes: `TIPO_MIME_EXCEL`, `TIPO_MIME_CSV`, `ACCION_EXPORTAR_REPORTE`,
+`OPCIONES_ESTADO`, `OPCIONES_ESTADO_ACTIVO`, `ESTADO_A_VIGENCIA` y los límites de
+`dias_vencer`.
+
+### Módulo `reportes` — `src/certificado_operadores/modulos/reportes/ui.py`
+
+Interfaz Streamlit de reportes y exportaciones (spec 010): selección del reporte,
+captura de filtros, resultados y descargas. Delega todo el acceso a datos en
+`ReportesRepository`; no contiene sentencias SQL (RNF-01) ni conoce el esquema.
+El paquete expone `render_reportes` en
+`src/certificado_operadores/modulos/reportes/__init__.py`.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `parsear_entero` | `(texto: str) -> int \| None` | Convierte el campo de búsqueda en entero. | `int` o `None` |
+| `_construir_seleccion` | `(definicion: DefinicionReporte, repositorio: ReportesRepository) -> SeleccionFiltros` | Renderiza los controles y devuelve la selección tipada. | `SeleccionFiltros` |
+| `_render_resultado` | `(df: pd.DataFrame \| None, definicion, repositorio, usuario: str) -> None` | Muestra resultados, exportaciones y auditoría. | — |
+| `render_reportes` | `(repositorio: ReportesRepository \| None = None) -> None` | Renderiza la vista completa (punto de entrada de `pages/`). | — |
+
+Constantes: `TITULO`, `DESCRIPCION`, `USUARIO_POR_DEFECTO`, `ETIQUETA_EJECUTAR`,
+`OPCION_TODAS`, `OPCION_TODOS` y `MENSAJE_SIN_RESULTADOS`. Punto de entrada:
+`src/certificado_operadores/pages/3_Reportes.py` (importa `render_reportes` y lo
+invoca; la página queda 100% libre de `exec`, cerrando la Fase 3).
+
+### Módulo `reportes` — pruebas
+
+- **Ubicación:** `tests/test_reportes.py`
+- **Cobertura:** repositorio contra SQLite temporal (catálogos de filtros y
+  ejecución de reportes con filtro de empresa y actividad), funciones puras
+  (condiciones por tipo de filtro, construcción de consulta, descripción de
+  tipologías y generación de Excel/CSV), auditoría de exportación y criterios
+  estáticos (paquete CA-01, UI sin SQL RNF-01, repositorio que encapsula la SQL
+  CA-03, página sin `exec` con `render_reportes` CA-02/RNF-02). Patrón AAA.
 
 ## Detalle
 

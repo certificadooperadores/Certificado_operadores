@@ -1,3 +1,16 @@
+"""Módulo heredado (DEPRECADO) — Reportes y exportaciones (spec 010).
+
+Este archivo mezclaba la vista de Streamlit con consultas SQL dinámicas y el
+registro directo de auditoría. En la spec 010 se **deprecó**: toda la
+funcionalidad se movió al paquete ``modulos/reportes``, cuya interfaz consume
+:class:`~certificado_operadores.infra.reportes_repository.ReportesRepository`
+sin sentencias SQL en la vista.
+
+Se conserva únicamente como referencia histórica; no debe usarse en código nuevo.
+
+Autor: Ing. Miguel Angel Ortiz Roldan
+"""
+
 import streamlit as st
 import pandas as pd
 import io
