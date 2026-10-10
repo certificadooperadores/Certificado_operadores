@@ -21,6 +21,7 @@ Autor: Ing. Miguel Angel Ortiz Roldan
 from __future__ import annotations
 
 import sys
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
@@ -42,7 +43,9 @@ from certificado_operadores.domain.models import (  # noqa: E402
 )
 from certificado_operadores.domain.usuarios import ROL_SUPER_ADMINISTRADOR  # noqa: E402
 from certificado_operadores.infra.eventos_repository import (  # noqa: E402
+    CLAVE_TABLA_EVENTOS,
     ETIQUETA_ESTADO,
+    ETIQUETA_EVENTO,
     GENEROS_VALIDOS,
     OPCION_ANULADO,
     OPCION_VIGENTE,
@@ -58,6 +61,7 @@ from certificado_operadores.infra.eventos_repository import (  # noqa: E402
     TIPO_EDICION_GENERO,
     TIPO_EDICION_LICENCIA,
     CambioRegistro,
+    CampoIncompatibleError,
     CodigoInexistenteError,
     ColumnaEditable,
     ColumnaProtegidaError,
@@ -65,7 +69,9 @@ from certificado_operadores.infra.eventos_repository import (  # noqa: E402
     DependenciaRegistroError,
     EventosRepository,
     RegistroInfo,
+    TipoEventoInfo,
     ValorInvalidoError,
+    campos_permitidos_evento,
 )
 
 ETIQUETA_GUARDAR = "💾 Guardar Cambios"
@@ -121,6 +127,19 @@ MENSAJE_SIN_SELECCION = "Seleccione al menos una fila para la acción en bloque.
 
 MENSAJE_SIN_COINCIDENCIAS = "Ningún registro coincide con el filtro."
 """Aviso mostrado cuando la búsqueda rápida no encuentra coincidencias (spec 018)."""
+
+ETIQUETA_TIPO_EVENTO = "🎫 Tipo de evento:"
+"""Etiqueta del selector de categoría de evento de la sub-pestaña Eventos (spec 020)."""
+
+OPCION_TODOS_EVENTOS = "Todos"
+"""Opción del selector que muestra todas las categorías y columnas (spec 020)."""
+
+MENSAJE_RESTRICCIONES_EVENTO = (
+    "Con un tipo de evento específico solo se muestran las columnas aplicables a "
+    "esa categoría. En «Todos» se muestran todas las columnas y el sistema "
+    "rechazará al guardar los campos incompatibles con cada evento."
+)
+"""Mensaje orientativo sobre las restricciones de campos por categoría (spec 020)."""
 
 
 def _como_entero(valor: object) -> int:
@@ -236,6 +255,74 @@ def opciones_evento(nombres_evento: list[str]) -> list[str]:
         La lista de nombres, sin duplicados, en el orden recibido.
     """
     return list(dict.fromkeys(nombres_evento))
+
+
+def id_tipo_evento_por_nombre(tipos_evento: list[TipoEventoInfo], nombre: str) -> int | None:
+    """Resuelve el identificador de un tipo de evento a partir de su nombre (spec 020).
+
+    Args:
+        tipos_evento: Tipos de evento del catálogo con su identificador.
+        nombre: Nombre legible del tipo de evento seleccionado.
+
+    Returns:
+        El identificador del tipo de evento, o ``None`` si no coincide ninguno.
+    """
+    for tipo in tipos_evento:
+        if tipo.nombre_evento == nombre:
+            return tipo.id_tipo_evento
+    return None
+
+
+def columnas_por_tipo_evento(
+    definicion: DefinicionTabla, id_tipo_evento: int | None
+) -> DefinicionTabla:
+    """Proyecta la definición de Eventos a las columnas aplicables a una categoría.
+
+    Conserva siempre las columnas protegidas (cédula, nombre, registro) y, de las
+    editables, solo las que la matriz de compatibilidad permite para el tipo de
+    evento indicado (spec 020, S-05). Con ``id_tipo_evento`` nulo devuelve la
+    definición completa (opción «Todos»).
+
+    Args:
+        definicion: Definición de la tabla de eventos.
+        id_tipo_evento: Tipo de evento seleccionado, o ``None`` para todas.
+
+    Returns:
+        Una copia de la definición con las columnas y editables aplicables.
+    """
+    if id_tipo_evento is None:
+        return definicion
+    permitidos = campos_permitidos_evento(id_tipo_evento)
+    editables = {columna.etiqueta: columna for columna in definicion.editables}
+    columnas = tuple(
+        columna
+        for columna in definicion.columnas
+        if columna.etiqueta not in editables or editables[columna.etiqueta].columna in permitidos
+    )
+    return replace(
+        definicion,
+        columnas=columnas,
+        editables=tuple(
+            columna for columna in definicion.editables if columna.columna in permitidos
+        ),
+    )
+
+
+def filas_por_tipo_evento(
+    filas: list[dict[str, object]], nombre_evento: str
+) -> list[dict[str, object]]:
+    """Deja solo las filas cuyo tipo de evento coincide con el nombre indicado (spec 020).
+
+    Args:
+        filas: Filas del editor (diccionarios ``etiqueta -> valor``).
+        nombre_evento: Nombre del tipo de evento a conservar.
+
+    Returns:
+        Las filas cuyo valor en la columna ``Evento`` coincide con el nombre.
+    """
+    if not nombre_evento:
+        return list(filas)
+    return [fila for fila in filas if str(fila.get(ETIQUETA_EVENTO, "")).strip() == nombre_evento]
 
 
 def _editable_por_etiqueta(definicion: DefinicionTabla) -> dict[str, ColumnaEditable]:
@@ -501,6 +588,7 @@ def _procesar_guardado(
         DependenciaRegistroError,
         CodigoInexistenteError,
         ColumnaProtegidaError,
+        CampoIncompatibleError,
         ValorInvalidoError,
     ) as error:
         _guardar_mensaje(definicion, "error", f"⛔ {error}")
@@ -568,18 +656,22 @@ def _render_tabla(
     definicion: DefinicionTabla,
     rol: str,
     usuario: str,
-    opciones_tipo_evento: list[str],
+    tipos_evento: list[TipoEventoInfo],
     opciones_fuente: list[str],
     opciones_descripcion: list[str],
 ) -> None:
-    """Renderiza una sub-pestaña: búsqueda, editor Excel y acciones en bloque.
+    """Renderiza una sub-pestaña: filtros, editor Excel y acciones en bloque.
+
+    En la sub-pestaña Eventos añade un selector de categoría que proyecta las
+    columnas visibles y editables a las aplicables al tipo elegido, y deja solo
+    los eventos de esa categoría (spec 020, S-05).
 
     Args:
         repositorio: Repositorio de tablas inyectado desde el punto de entrada.
         definicion: Metadatos de la tabla a mostrar.
         rol: Rol del usuario de la sesión (controla la eliminación).
         usuario: Usuario de la sesión (para auditoría).
-        opciones_tipo_evento: Nombres de tipos de evento para la lista desplegable.
+        tipos_evento: Tipos de evento del catálogo (identificador y nombre).
         opciones_fuente: Fuentes oficiales para la lista desplegable.
         opciones_descripcion: Descripciones oficiales para la lista desplegable.
     """
@@ -589,12 +681,30 @@ def _render_tabla(
         st.info(f"No hay registros en {definicion.etiqueta.lower()}.")
         return
 
+    opciones_tipo_evento = opciones_evento([tipo.nombre_evento for tipo in tipos_evento])
+    nombre_tipo = ""
+    if definicion.clave == CLAVE_TABLA_EVENTOS:
+        seleccion = st.selectbox(
+            ETIQUETA_TIPO_EVENTO,
+            [OPCION_TODOS_EVENTOS, *opciones_tipo_evento],
+            key=f"{PREFIJO_CLAVE_FILTRO}tipo_{definicion.clave}",
+        )
+        if seleccion == OPCION_TODOS_EVENTOS:
+            st.caption(MENSAJE_RESTRICCIONES_EVENTO)
+        else:
+            nombre_tipo = seleccion
+        definicion = columnas_por_tipo_evento(
+            definicion, id_tipo_evento_por_nombre(tipos_evento, nombre_tipo)
+        )
+
     termino = st.text_input(
         ETIQUETA_FILTRO,
         placeholder=PLACEHOLDER_FILTRO,
         key=f"{PREFIJO_CLAVE_FILTRO}{definicion.clave}",
     )
     filas = filtrar_filas(filas_editor(definicion, registros), termino)
+    if nombre_tipo:
+        filas = filas_por_tipo_evento(filas, nombre_tipo)
     if not filas:
         st.warning(MENSAJE_SIN_COINCIDENCIAS)
         return
@@ -654,9 +764,7 @@ def render_correccion_registros(repositorio: EventosRepository | None = None) ->
     repositorio = repositorio or EventosRepository()
     rol = st.session_state.get("rol", "")
     usuario = st.session_state.get("usuario", "")
-    opciones_tipo_evento = opciones_evento(
-        [tipo.nombre_evento for tipo in repositorio.listar_tipos_evento()]
-    )
+    tipos_evento = repositorio.listar_tipos_evento()
     opciones_fuente = repositorio.listar_fuentes_comportamiento()
     opciones_descripcion = repositorio.listar_descripciones_comportamiento()
 
@@ -669,7 +777,7 @@ def render_correccion_registros(repositorio: EventosRepository | None = None) ->
                 definicion,
                 rol,
                 usuario,
-                opciones_tipo_evento,
+                tipos_evento,
                 opciones_fuente,
                 opciones_descripcion,
             )
@@ -681,14 +789,20 @@ __all__ = [
     "ETIQUETA_FILTRO",
     "ETIQUETA_GUARDAR",
     "ETIQUETA_SELECCION",
+    "ETIQUETA_TIPO_EVENTO",
     "ETIQUETA_VIGENTE_BLOQUE",
+    "MENSAJE_RESTRICCIONES_EVENTO",
+    "OPCION_TODOS_EVENTOS",
     "PLACEHOLDER_FILTRO",
+    "columnas_por_tipo_evento",
     "columnas_protegidas",
     "configuracion_columnas",
     "detectar_cambios",
     "filas_con_seleccion",
     "filas_editor",
+    "filas_por_tipo_evento",
     "filtrar_filas",
+    "id_tipo_evento_por_nombre",
     "ids_eliminados",
     "ids_seleccionados",
     "opciones_evento",

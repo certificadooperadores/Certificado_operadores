@@ -16,9 +16,10 @@ Autor: Ing. Miguel Angel Ortiz Roldan
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
-from datetime import date
-from typing import TYPE_CHECKING
+from datetime import date, timedelta
+from typing import TYPE_CHECKING, cast
 
 from sqlalchemy import bindparam, text
 
@@ -73,6 +74,12 @@ ACCION_EDITAR_TABLA = "Editar"
 ETIQUETA_ESTADO = "Estado"
 """Encabezado de la columna de vigencia en el editor tipo Excel."""
 
+ETIQUETA_EVENTO = "Evento"
+"""Encabezado legible de la columna del tipo de evento (spec 020)."""
+
+CLAVE_TABLA_EVENTOS = "eventos"
+"""Clave del catálogo de la tabla de eventos dentro de ``TABLAS_CORRECCION``."""
+
 TABLA_PERSONA = "dim_persona"
 """Nombre físico de la dimensión de personas (operadores) en la base de datos."""
 
@@ -121,6 +128,87 @@ TIPO_EDICION_FUENTE = "fuente"
 TIPO_EDICION_DESCRIPCION = "descripcion"
 """Tipo editable restringido a las descripciones del catálogo (spec 018)."""
 
+# --- Spec 020: compatibilidad de campos por categoría de evento --------------
+TIPO_EVENTO_CERTIFICACION = 1
+"""Identificador del evento de certificación inicial (acreditación)."""
+
+TIPO_EVENTO_REACTIVACION = 2
+"""Identificador del evento de reactivación del certificado (acreditación)."""
+
+TIPO_EVENTO_RENOVACION = 3
+"""Identificador del evento de renovación del certificado (acreditación)."""
+
+TIPO_EVENTO_OBSERVACION = 4
+"""Identificador del evento de bitácora simple (solo código, tipo y observación)."""
+
+TIPO_EVENTO_RESTRICCION_MEDICA = 5
+"""Identificador del evento de restricción médica (salud ocupacional)."""
+
+TIPO_EVENTO_SUSPENSION = 6
+"""Identificador del evento de suspensión (medida temporal)."""
+
+TIPO_EVENTO_CANCELACION = 7
+"""Identificador del evento de cancelación o desvinculación (novedad de retiro)."""
+
+CAMPOS_EVENTO_EDITABLES: frozenset[str] = frozenset(
+    {
+        "id_codigo",
+        "id_tipo_evento",
+        "fecha_certificado",
+        "fecha_retiro",
+        "fecha_notificacion_retiro",
+        "fecha_suspension",
+        "fecha_prueba",
+        "evaluador",
+        "id_vehiculo_evaluado",
+        "observacion",
+    }
+)
+"""Universo de columnas editables de negocio de ``fact_eventos_operador`` (spec 020)."""
+
+_CAMPOS_EVENTO_BASE: frozenset[str] = frozenset({"id_codigo", "id_tipo_evento", "observacion"})
+"""Campos comunes a toda categoría: llaves y bitácora textual."""
+
+_CAMPOS_EVENTO_ACREDITACION: frozenset[str] = _CAMPOS_EVENTO_BASE | {
+    "fecha_certificado",
+    "fecha_prueba",
+    "evaluador",
+    "id_vehiculo_evaluado",
+}
+"""Campos de acreditación/habilitación: certificado, prueba, evaluador y vehículo."""
+
+CAMPOS_PERMITIDOS_POR_EVENTO: dict[int, frozenset[str]] = {
+    TIPO_EVENTO_CERTIFICACION: _CAMPOS_EVENTO_ACREDITACION,
+    TIPO_EVENTO_REACTIVACION: _CAMPOS_EVENTO_ACREDITACION,
+    TIPO_EVENTO_RENOVACION: _CAMPOS_EVENTO_ACREDITACION,
+    TIPO_EVENTO_CANCELACION: _CAMPOS_EVENTO_BASE
+    | {
+        "fecha_retiro",
+        "fecha_notificacion_retiro",
+    },
+    TIPO_EVENTO_SUSPENSION: _CAMPOS_EVENTO_BASE | {"fecha_suspension"},
+    TIPO_EVENTO_RESTRICCION_MEDICA: _CAMPOS_EVENTO_BASE,
+    TIPO_EVENTO_OBSERVACION: _CAMPOS_EVENTO_BASE,
+}
+"""Matriz de compatibilidad ``id_tipo_evento -> columnas editables permitidas`` (spec 020, S-01)."""
+
+CAMPOS_EVENTO_POR_DEFECTO: frozenset[str] = _CAMPOS_EVENTO_BASE
+"""Conjunto aplicado a categorías no listadas en la matriz (política restrictiva, spec 020)."""
+
+CAMPOS_FECHA_EVENTO: frozenset[str] = frozenset(
+    {
+        "fecha_certificado",
+        "fecha_retiro",
+        "fecha_notificacion_retiro",
+        "fecha_suspension",
+        "fecha_prueba",
+    }
+)
+"""Columnas de fecha de evento sujetas a validación de plausibilidad (spec 020, S-04)."""
+
+_PATRON_FECHA_ISO = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+"""Patrón que exige el formato de fecha ``AAAA-MM-DD`` antes de interpretarla."""
+
 MENSAJE_DEPENDENCIAS = (
     "No se puede eliminar: el registro tiene {eventos} eventos y "
     "{comportamientos} comportamientos dependientes. Debe anularlo o "
@@ -139,6 +227,21 @@ MENSAJE_COLUMNA_PROTEGIDA = "La columna «{etiqueta}» es de solo lectura y no p
 MENSAJE_VALOR_INVALIDO = "El valor «{valor}» no es válido para la columna «{etiqueta}»."
 """Mensaje de error ante un valor fuera del catálogo permitido (spec 017, S-04)."""
 
+MENSAJE_CAMPO_INCOMPATIBLE = (
+    "El evento de tipo «{nombre_evento}» no admite la columna «{etiqueta}»."
+)
+"""Mensaje de rechazo de un campo prohibido para la categoría del evento (spec 020, S-02)."""
+
+MENSAJE_FECHA_INVALIDA = (
+    "La fecha «{valor}» de la columna «{etiqueta}» no tiene el formato AAAA-MM-DD."
+)
+"""Mensaje de rechazo de una fecha con formato inválido (spec 020, S-04)."""
+
+MENSAJE_FECHA_FUTURA = (
+    "La fecha «{valor}» de la columna «{etiqueta}» no puede ser posterior a {limite}."
+)
+"""Mensaje de rechazo de una fecha futura inverosímil (spec 020, S-04)."""
+
 
 class DependenciaRegistroError(ValueError):
     """Error de integridad referencial: el registro tiene hijos dependientes (spec 017, S-01)."""
@@ -154,6 +257,10 @@ class ColumnaProtegidaError(ValueError):
 
 class ValorInvalidoError(ValueError):
     """Error de edición: el valor está fuera del catálogo permitido (spec 017, S-04)."""
+
+
+class CampoIncompatibleError(ValueError):
+    """Error de edición: el campo no aplica a la categoría del evento (spec 020, S-02)."""
 
 
 @dataclass(frozen=True)
@@ -565,6 +672,15 @@ _SQL_TIPO_EVENTO_POR_NOMBRE = text(
     "SELECT id_tipo_evento FROM dim_tipo_evento WHERE nombre_evento = :nombre LIMIT 1"
 )
 
+# --- Spec 020: resolución del tipo de evento de una fila ---------------------
+_SQL_TIPO_EVENTO_ACTUAL = text(
+    "SELECT id_tipo_evento FROM fact_eventos_operador WHERE id_hecho_evento = :id"
+)
+
+_SQL_NOMBRE_TIPO_EVENTO = text(
+    "SELECT nombre_evento FROM dim_tipo_evento WHERE id_tipo_evento = :id LIMIT 1"
+)
+
 _SQL_CONTEO_DEPENDENCIAS: dict[str, TextClause] = {
     "eventos": text(
         "SELECT COUNT(*) FROM fact_eventos_operador WHERE id_codigo IN :ids"
@@ -613,6 +729,70 @@ def _columna_editable(definicion: DefinicionTabla, etiqueta: str) -> ColumnaEdit
         if columna.etiqueta == etiqueta:
             return columna
     return None
+
+
+def campos_permitidos_evento(id_tipo_evento: int) -> frozenset[str]:
+    """Devuelve las columnas editables permitidas para una categoría de evento.
+
+    Aplica la matriz :data:`CAMPOS_PERMITIDOS_POR_EVENTO`; para una categoría no
+    listada usa el conjunto más restrictivo :data:`CAMPOS_EVENTO_POR_DEFECTO`
+    (spec 020, S-01).
+
+    Args:
+        id_tipo_evento: Identificador del tipo de evento (``dim_tipo_evento``).
+
+    Returns:
+        El conjunto de nombres físicos de columnas editables permitidas.
+    """
+    return CAMPOS_PERMITIDOS_POR_EVENTO.get(id_tipo_evento, CAMPOS_EVENTO_POR_DEFECTO)
+
+
+def _valor_vacio(valor: object) -> bool:
+    """Indica si el valor de una celda está vacío.
+
+    Se consideran vacíos ``None``, las cadenas en blanco y el ``NaN`` que el
+    editor puede entregar para una celda sin dato.
+
+    Args:
+        valor: Valor crudo proveniente del editor o de la base de datos.
+
+    Returns:
+        ``True`` si el valor no representa un dato asignado.
+    """
+    if valor is None:
+        return True
+    if isinstance(valor, str):
+        return valor.strip() == ""
+    return isinstance(valor, float) and valor != valor
+
+
+def _validar_fecha_evento(valor: object, etiqueta: str) -> None:
+    """Valida el formato y la plausibilidad de una fecha de evento (spec 020, S-04).
+
+    Exige el formato exacto ``AAAA-MM-DD`` y rechaza las fechas posteriores a
+    ``date.today() + 1 día``.
+
+    Args:
+        valor: Valor nuevo propuesto para la celda de fecha.
+        etiqueta: Encabezado legible de la columna (para el mensaje de error).
+
+    Raises:
+        ValorInvalidoError: Si el formato es inválido o la fecha es inverosímil.
+    """
+    texto = str(valor).strip()
+    if not _PATRON_FECHA_ISO.match(texto):
+        raise ValorInvalidoError(MENSAJE_FECHA_INVALIDA.format(valor=valor, etiqueta=etiqueta))
+    try:
+        fecha = date.fromisoformat(texto)
+    except ValueError as error:
+        raise ValorInvalidoError(
+            MENSAJE_FECHA_INVALIDA.format(valor=valor, etiqueta=etiqueta)
+        ) from error
+    limite = date.today() + timedelta(days=1)
+    if fecha > limite:
+        raise ValorInvalidoError(
+            MENSAJE_FECHA_FUTURA.format(valor=valor, etiqueta=etiqueta, limite=limite.isoformat())
+        )
 
 
 def _a_entero(valor: object) -> int:
@@ -1143,13 +1323,16 @@ class EventosRepository:
     def actualizar_registros_seguros(
         self, clave: str, cambios: list[CambioRegistro], usuario: str
     ) -> int:
-        """Aplica cambios de celdas validando las reglas de seguridad (spec 017).
+        """Aplica cambios de celdas validando las reglas de seguridad (specs 017 y 020).
 
         Cada cambio se resuelve y valida dentro de la misma transacción: la
         columna debe ser editable (S-03), los códigos reasignados deben existir en
         ``dim_codigo`` (S-02) y los valores de listas desplegables deben pertenecer
-        al catálogo permitido (S-04). Si cualquier cambio falla, la transacción se
-        revierte por completo y no se registra auditoría (S-05).
+        al catálogo permitido (S-04). Sobre la tabla de eventos, la spec 020 exige
+        además que cada campo sea compatible con la categoría del evento
+        (S-01/S-02), limpia los campos huérfanos al cambiar el tipo (S-03) y valida
+        la plausibilidad de las fechas (S-04). Si cualquier cambio falla, la
+        transacción se revierte por completo y no se registra auditoría (S-05).
 
         Args:
             clave: Identificador corto de la tabla a modificar.
@@ -1163,26 +1346,18 @@ class EventosRepository:
             ValueError: Si la clave no corresponde a una tabla soportada.
             ColumnaProtegidaError: Si se intenta editar una columna de solo lectura.
             CodigoInexistenteError: Si se reasigna un código inexistente.
-            ValorInvalidoError: Si el valor no pertenece al catálogo permitido.
+            ValorInvalidoError: Si el valor no pertenece al catálogo permitido o la
+                fecha es inválida.
+            CampoIncompatibleError: Si el campo no aplica a la categoría del evento.
         """
         definicion = _definicion(clave)
         if not cambios:
             return 0
-        afectados = 0
         with self.motor.begin() as conexion:
-            for cambio in cambios:
-                columna = _columna_editable(definicion, cambio.etiqueta)
-                if columna is None:
-                    raise ColumnaProtegidaError(
-                        MENSAJE_COLUMNA_PROTEGIDA.format(etiqueta=cambio.etiqueta)
-                    )
-                valor = self._resolver_valor(conexion, columna, cambio.valor)
-                afectados += int(
-                    conexion.execute(
-                        _sql_actualizar_columna(definicion, columna.columna),
-                        {"valor": valor, "id": int(cambio.id_registro)},
-                    ).rowcount
-                )
+            if definicion.clave == CLAVE_TABLA_EVENTOS:
+                afectados = self._aplicar_cambios_evento(conexion, definicion, cambios)
+            else:
+                afectados = self._aplicar_cambios_simples(conexion, definicion, cambios)
             detalles = (
                 f"IDs: {','.join(str(int(cambio.id_registro)) for cambio in cambios)}; "
                 f"Columnas: {','.join(cambio.etiqueta for cambio in cambios)}"
@@ -1191,6 +1366,231 @@ class EventosRepository:
                 conexion, usuario, f"{ACCION_EDITAR_TABLA} {definicion.etiqueta}", detalles
             )
         return afectados
+
+    def _aplicar_cambios_simples(
+        self, conexion: Connection, definicion: DefinicionTabla, cambios: list[CambioRegistro]
+    ) -> int:
+        """Aplica cambios genéricos de una tabla sin reglas por categoría (spec 017).
+
+        Args:
+            conexion: Conexión activa dentro de la transacción.
+            definicion: Metadatos de la tabla a modificar.
+            cambios: Lista de cambios solicitados.
+
+        Returns:
+            Número de filas afectadas.
+
+        Raises:
+            ColumnaProtegidaError: Si se intenta editar una columna de solo lectura.
+            CodigoInexistenteError: Si se reasigna un código inexistente.
+            ValorInvalidoError: Si el valor no pertenece al catálogo permitido.
+        """
+        afectados = 0
+        for cambio in cambios:
+            columna = _columna_editable(definicion, cambio.etiqueta)
+            if columna is None:
+                raise ColumnaProtegidaError(
+                    MENSAJE_COLUMNA_PROTEGIDA.format(etiqueta=cambio.etiqueta)
+                )
+            valor = self._resolver_valor(conexion, columna, cambio.valor)
+            afectados += int(
+                conexion.execute(
+                    _sql_actualizar_columna(definicion, columna.columna),
+                    {"valor": valor, "id": int(cambio.id_registro)},
+                ).rowcount
+            )
+        return afectados
+
+    def _aplicar_cambios_evento(
+        self, conexion: Connection, definicion: DefinicionTabla, cambios: list[CambioRegistro]
+    ) -> int:
+        """Aplica cambios de la tabla de eventos agrupados por fila (spec 020).
+
+        Agrupa los cambios por registro para resolver una sola vez el tipo de
+        evento efectivo de cada fila y validar la compatibilidad de todos sus
+        campos contra la categoría resultante.
+
+        Args:
+            conexion: Conexión activa dentro de la transacción.
+            definicion: Metadatos de la tabla de eventos.
+            cambios: Lista de cambios solicitados.
+
+        Returns:
+            Número de filas afectadas (sin contar la limpieza de campos huérfanos).
+        """
+        por_fila: dict[int, list[CambioRegistro]] = {}
+        for cambio in cambios:
+            por_fila.setdefault(int(cambio.id_registro), []).append(cambio)
+        afectados = 0
+        for id_registro, cambios_fila in por_fila.items():
+            afectados += self._aplicar_cambios_evento_fila(
+                conexion, definicion, id_registro, cambios_fila
+            )
+        return afectados
+
+    def _aplicar_cambios_evento_fila(
+        self,
+        conexion: Connection,
+        definicion: DefinicionTabla,
+        id_registro: int,
+        cambios_fila: list[CambioRegistro],
+    ) -> int:
+        """Valida, ejecuta y limpia los cambios de una sola fila de evento (spec 020).
+
+        Args:
+            conexion: Conexión activa dentro de la transacción.
+            definicion: Metadatos de la tabla de eventos.
+            id_registro: Clave primaria de la fila editada.
+            cambios_fila: Cambios solicitados sobre esa fila.
+
+        Returns:
+            Número de filas afectadas por los cambios explícitos.
+
+        Raises:
+            ColumnaProtegidaError: Si se intenta editar una columna de solo lectura.
+            CampoIncompatibleError: Si un campo no aplica a la categoría del evento.
+            ValorInvalidoError: Si una fecha es inválida o el valor no es válido.
+            CodigoInexistenteError: Si se reasigna un código inexistente.
+        """
+        columnas: dict[str, ColumnaEditable] = {}
+        for cambio in cambios_fila:
+            columna = _columna_editable(definicion, cambio.etiqueta)
+            if columna is None:
+                raise ColumnaProtegidaError(
+                    MENSAJE_COLUMNA_PROTEGIDA.format(etiqueta=cambio.etiqueta)
+                )
+            columnas[cambio.etiqueta] = columna
+
+        id_tipo_evento, nombre_evento = self._tipo_evento_efectivo(
+            conexion, id_registro, columnas, cambios_fila
+        )
+        permitidos = (
+            CAMPOS_EVENTO_POR_DEFECTO
+            if id_tipo_evento is None
+            else campos_permitidos_evento(id_tipo_evento)
+        )
+        self._validar_compatibilidad_evento(cambios_fila, columnas, permitidos, nombre_evento)
+
+        afectados = 0
+        for cambio in cambios_fila:
+            columna = columnas[cambio.etiqueta]
+            valor = self._resolver_valor(conexion, columna, cambio.valor)
+            afectados += int(
+                conexion.execute(
+                    _sql_actualizar_columna(definicion, columna.columna),
+                    {"valor": valor, "id": id_registro},
+                ).rowcount
+            )
+        if any(cambio.etiqueta == ETIQUETA_EVENTO for cambio in cambios_fila):
+            self._limpiar_campos_huerfanos(conexion, definicion, id_registro, permitidos)
+        return afectados
+
+    @staticmethod
+    def _tipo_evento_efectivo(
+        conexion: Connection,
+        id_registro: int,
+        columnas: dict[str, ColumnaEditable],
+        cambios_fila: list[CambioRegistro],
+    ) -> tuple[int | None, str]:
+        """Resuelve el tipo de evento efectivo de una fila tras la edición.
+
+        Si el usuario modificó la columna ``Evento`` se usa el tipo nuevo; en caso
+        contrario se lee el tipo actual de la base de datos.
+
+        Args:
+            conexion: Conexión activa dentro de la transacción.
+            id_registro: Clave primaria de la fila.
+            columnas: Columnas editables de la fila indexadas por etiqueta.
+            cambios_fila: Cambios solicitados sobre la fila.
+
+        Returns:
+            La tupla ``(id_tipo_evento, nombre_evento)``; ``id_tipo_evento`` es
+            ``None`` si la fila no existe.
+        """
+        cambio_evento = next(
+            (cambio for cambio in cambios_fila if cambio.etiqueta == ETIQUETA_EVENTO), None
+        )
+        if cambio_evento is not None:
+            id_tipo_evento = cast(
+                int,
+                EventosRepository._resolver_valor(
+                    conexion, columnas[ETIQUETA_EVENTO], cambio_evento.valor
+                ),
+            )
+            return id_tipo_evento, str(cambio_evento.valor).strip()
+
+        fila = conexion.execute(_SQL_TIPO_EVENTO_ACTUAL, {"id": id_registro}).first()
+        if fila is None:
+            return None, ""
+        id_tipo_evento = int(fila[0])
+        return id_tipo_evento, EventosRepository._nombre_tipo_evento(conexion, id_tipo_evento)
+
+    @staticmethod
+    def _nombre_tipo_evento(conexion: Connection, id_tipo_evento: int) -> str:
+        """Devuelve el nombre legible de un tipo de evento (o su id si no existe).
+
+        Args:
+            conexion: Conexión activa dentro de la transacción.
+            id_tipo_evento: Identificador del tipo de evento.
+
+        Returns:
+            El nombre del tipo de evento, o el identificador como texto.
+        """
+        fila = conexion.execute(_SQL_NOMBRE_TIPO_EVENTO, {"id": id_tipo_evento}).first()
+        return str(fila[0]) if fila is not None else str(id_tipo_evento)
+
+    @staticmethod
+    def _validar_compatibilidad_evento(
+        cambios_fila: list[CambioRegistro],
+        columnas: dict[str, ColumnaEditable],
+        permitidos: frozenset[str],
+        nombre_evento: str,
+    ) -> None:
+        """Rechaza campos prohibidos y fechas inválidas de una fila de evento (spec 020).
+
+        Args:
+            cambios_fila: Cambios solicitados sobre la fila.
+            columnas: Columnas editables de la fila indexadas por etiqueta.
+            permitidos: Conjunto de columnas permitidas para la categoría.
+            nombre_evento: Nombre legible de la categoría (para el mensaje).
+
+        Raises:
+            CampoIncompatibleError: Si un campo con valor no aplica a la categoría.
+            ValorInvalidoError: Si una fecha es inválida o inverosímil.
+        """
+        for cambio in cambios_fila:
+            columna = columnas[cambio.etiqueta]
+            if columna.tipo == TIPO_EDICION_VIGENCIA:
+                continue
+            if columna.columna not in permitidos and not _valor_vacio(cambio.valor):
+                raise CampoIncompatibleError(
+                    MENSAJE_CAMPO_INCOMPATIBLE.format(
+                        nombre_evento=nombre_evento, etiqueta=cambio.etiqueta
+                    )
+                )
+            if columna.columna in CAMPOS_FECHA_EVENTO and not _valor_vacio(cambio.valor):
+                _validar_fecha_evento(cambio.valor, cambio.etiqueta)
+
+    @staticmethod
+    def _limpiar_campos_huerfanos(
+        conexion: Connection,
+        definicion: DefinicionTabla,
+        id_registro: int,
+        permitidos: frozenset[str],
+    ) -> None:
+        """Resetea a ``NULL`` los campos incompatibles con el nuevo tipo (spec 020, S-03).
+
+        Args:
+            conexion: Conexión activa dentro de la transacción.
+            definicion: Metadatos de la tabla de eventos.
+            id_registro: Clave primaria de la fila editada.
+            permitidos: Columnas permitidas para el nuevo tipo de evento.
+        """
+        for columna in CAMPOS_EVENTO_EDITABLES - permitidos:
+            conexion.execute(
+                _sql_actualizar_columna(definicion, columna),
+                {"valor": None, "id": id_registro},
+            )
 
     def _verificar_dependencias(self, definicion: DefinicionTabla, ids: list[int]) -> None:
         """Aborta la eliminación si algún registro tiene hijos dependientes.
@@ -1372,15 +1772,24 @@ __all__ = [
     "ACCION_REACTIVAR_LOTE",
     "ACCION_REACTIVAR_REGISTROS",
     "ACCION_REACTIVAR_TABLA",
+    "CAMPOS_EVENTO_EDITABLES",
+    "CAMPOS_EVENTO_POR_DEFECTO",
+    "CAMPOS_FECHA_EVENTO",
+    "CAMPOS_PERMITIDOS_POR_EVENTO",
+    "CLAVE_TABLA_EVENTOS",
     "ESTADO_ANULADO_TEXTO",
     "ESTADO_VIGENTE_TEXTO",
     "ETIQUETA_ESTADO",
+    "ETIQUETA_EVENTO",
     "FORMATO_LOTE",
     "GENEROS_VALIDOS",
     "LIMITE_POR_DEFECTO",
+    "MENSAJE_CAMPO_INCOMPATIBLE",
     "MENSAJE_CODIGO_INEXISTENTE",
     "MENSAJE_COLUMNA_PROTEGIDA",
     "MENSAJE_DEPENDENCIAS",
+    "MENSAJE_FECHA_FUTURA",
+    "MENSAJE_FECHA_INVALIDA",
     "MENSAJE_VALOR_INVALIDO",
     "OPCIONES_ESTADO",
     "OPCIONES_LICENCIA",
@@ -1398,7 +1807,15 @@ __all__ = [
     "TIPO_EDICION_LICENCIA",
     "TIPO_EDICION_TEXTO",
     "TIPO_EDICION_VIGENCIA",
+    "TIPO_EVENTO_CANCELACION",
+    "TIPO_EVENTO_CERTIFICACION",
+    "TIPO_EVENTO_OBSERVACION",
+    "TIPO_EVENTO_REACTIVACION",
+    "TIPO_EVENTO_RENOVACION",
+    "TIPO_EVENTO_RESTRICCION_MEDICA",
+    "TIPO_EVENTO_SUSPENSION",
     "CambioRegistro",
+    "CampoIncompatibleError",
     "CodigoInexistenteError",
     "ColumnaEditable",
     "ColumnaProtegidaError",
@@ -1412,4 +1829,5 @@ __all__ = [
     "RegistroInfo",
     "TipoEventoInfo",
     "ValorInvalidoError",
+    "campos_permitidos_evento",
 ]

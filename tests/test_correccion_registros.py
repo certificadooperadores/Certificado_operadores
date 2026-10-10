@@ -1,13 +1,15 @@
-"""Pruebas de la corrección de registros (specs 015, 017, 018 y 019).
+"""Pruebas de la corrección de registros (specs 015, 017, 018, 019 y 020).
 
 Cubren cinco frentes: el repositorio ``EventosRepository`` contra una base
 SQLite temporal (búsqueda con filtros y mutaciones de la spec 006, el listado y
 las mutaciones genéricas por tabla de la spec 015, las validaciones de
 integridad referencial y edición segura de la spec 017, los catálogos
-oficiales y la tabla de códigos de la spec 018, y las columnas completas de
-negocio de la tabla de eventos de la spec 019), las funciones puras de la UI
-tipo Excel (incluidas la búsqueda rápida y las acciones en bloque de la spec
-018), el catálogo de tablas soportadas y las verificaciones estáticas de los
+oficiales y la tabla de códigos de la spec 018, las columnas completas de
+negocio de la tabla de eventos de la spec 019 y el bloqueo de campos por
+categoría de evento de la spec 020), las funciones puras de la UI
+tipo Excel (incluidas la búsqueda rápida, las acciones en bloque de la spec
+018 y la proyección de columnas/filas por tipo de evento de la spec 020), el
+catálogo de tablas soportadas y las verificaciones estáticas de los
 criterios de aceptación: el paquete existe, la UI usa ``st.data_editor`` con
 columnas protegidas y listas desplegables, ofrece el buscador rápido, expone los
 botones de acción en bloque y de guardado, no contiene SQL, y el repositorio
@@ -40,8 +42,12 @@ from certificado_operadores.infra.eventos_repository import (
     ACCION_ELIMINAR_REGISTROS,
     ACCION_REACTIVAR_LOTE,
     ACCION_REACTIVAR_REGISTROS,
+    CAMPOS_EVENTO_POR_DEFECTO,
+    CAMPOS_PERMITIDOS_POR_EVENTO,
     ETIQUETA_ESTADO,
+    ETIQUETA_EVENTO,
     GENEROS_VALIDOS,
+    MENSAJE_CAMPO_INCOMPATIBLE,
     OPCION_ANULADO,
     OPCION_VIGENTE,
     OPCIONES_LICENCIA,
@@ -52,7 +58,15 @@ from certificado_operadores.infra.eventos_repository import (
     TIPO_EDICION_EVENTO,
     TIPO_EDICION_FECHA,
     TIPO_EDICION_TEXTO,
+    TIPO_EVENTO_CANCELACION,
+    TIPO_EVENTO_CERTIFICACION,
+    TIPO_EVENTO_OBSERVACION,
+    TIPO_EVENTO_REACTIVACION,
+    TIPO_EVENTO_RENOVACION,
+    TIPO_EVENTO_RESTRICCION_MEDICA,
+    TIPO_EVENTO_SUSPENSION,
     CambioRegistro,
+    CampoIncompatibleError,
     CodigoInexistenteError,
     ColumnaProtegidaError,
     DefinicionTabla,
@@ -64,6 +78,7 @@ from certificado_operadores.infra.eventos_repository import (
     RegistroInfo,
     TipoEventoInfo,
     ValorInvalidoError,
+    campos_permitidos_evento,
 )
 from certificado_operadores.modulos.correccion_registros import ui
 
@@ -457,6 +472,24 @@ def _total(motor: Engine, tabla: str) -> int:
     """Cuenta las filas de una tabla."""
     with motor.connect() as conexion:
         return int(conexion.execute(text(f"SELECT COUNT(*) FROM {tabla}")).scalar_one())
+
+
+def _celda(motor: Engine, id_evento: int, columna: str) -> object:
+    """Devuelve el valor de una columna de un evento de ``fact_eventos_operador``."""
+    with motor.connect() as conexion:
+        return conexion.execute(
+            text(f"SELECT {columna} FROM fact_eventos_operador WHERE id_hecho_evento = :id"),
+            {"id": id_evento},
+        ).scalar_one()
+
+
+def _columna_fisica(etiqueta: str) -> str:
+    """Traduce la etiqueta legible de una columna editable de Eventos a su nombre físico."""
+    return next(
+        columna.columna
+        for columna in _definicion("eventos").editables
+        if columna.etiqueta == etiqueta
+    )
 
 
 def _auditoria(motor: Engine) -> list[tuple[str, str]]:
@@ -1135,30 +1168,180 @@ def test_actualizar_registros_seguros_cambia_evaluador_vehiculo_y_observacion(
     assert str(fila[2]) == "Motivo de retiro"
 
 
-def test_actualizar_registros_seguros_cambia_fecha_suspension_y_prueba(
+def test_actualizar_registros_seguros_cambia_fecha_prueba(
     repositorio: EventosRepository, motor_sqlite: Engine
 ) -> None:
-    """CA-02: las fechas de suspensión y prueba se editan y persisten."""
+    """CA-02/S-01: la fecha de prueba (permitida en certificación) se edita y persiste."""
     # Arrange
-    cambios = [
-        CambioRegistro(3, "Fecha Suspensión", "2026-05-10"),
-        CambioRegistro(3, "Fecha Prueba", "2026-05-08"),
-    ]
+    cambio = CambioRegistro(3, "Fecha Prueba", "2026-05-08")
 
     # Act
-    afectados = repositorio.actualizar_registros_seguros("eventos", cambios, "admin")
+    afectados = repositorio.actualizar_registros_seguros("eventos", [cambio], "admin")
 
     # Assert
-    assert afectados == 2
+    assert afectados == 1
+    with motor_sqlite.connect() as conexion:
+        fecha = conexion.execute(
+            text("SELECT fecha_prueba FROM fact_eventos_operador WHERE id_hecho_evento = 3")
+        ).scalar_one()
+    assert str(fecha) == "2026-05-08"
+
+
+# --- Spec 020: compatibilidad de campos por categoría de evento --------------
+def test_matriz_campos_permitidos_por_evento_define_las_categorias() -> None:
+    """CA-01/S-01: la matriz declara las categorías con sus campos permitidos."""
+    # Arrange
+    base = {"id_codigo", "id_tipo_evento", "observacion"}
+    acreditacion = base | {
+        "fecha_certificado",
+        "fecha_prueba",
+        "evaluador",
+        "id_vehiculo_evaluado",
+    }
+
+    # Act / Assert
+    assert set(CAMPOS_PERMITIDOS_POR_EVENTO) == {
+        TIPO_EVENTO_CERTIFICACION,
+        TIPO_EVENTO_REACTIVACION,
+        TIPO_EVENTO_RENOVACION,
+        TIPO_EVENTO_CANCELACION,
+        TIPO_EVENTO_SUSPENSION,
+        TIPO_EVENTO_RESTRICCION_MEDICA,
+        TIPO_EVENTO_OBSERVACION,
+    }
+    assert CAMPOS_PERMITIDOS_POR_EVENTO[TIPO_EVENTO_CERTIFICACION] == acreditacion
+    assert CAMPOS_PERMITIDOS_POR_EVENTO[TIPO_EVENTO_REACTIVACION] == acreditacion
+    assert CAMPOS_PERMITIDOS_POR_EVENTO[TIPO_EVENTO_RENOVACION] == acreditacion
+    assert CAMPOS_PERMITIDOS_POR_EVENTO[TIPO_EVENTO_CANCELACION] == base | {
+        "fecha_retiro",
+        "fecha_notificacion_retiro",
+    }
+    assert CAMPOS_PERMITIDOS_POR_EVENTO[TIPO_EVENTO_SUSPENSION] == base | {"fecha_suspension"}
+    assert CAMPOS_PERMITIDOS_POR_EVENTO[TIPO_EVENTO_RESTRICCION_MEDICA] == base
+    assert CAMPOS_PERMITIDOS_POR_EVENTO[TIPO_EVENTO_OBSERVACION] == base
+
+
+def test_campos_permitidos_evento_categoria_desconocida_es_restrictiva() -> None:
+    """CA-01/S-01: una categoría no listada usa el conjunto más restrictivo."""
+    # Act / Assert
+    assert campos_permitidos_evento(99) == CAMPOS_EVENTO_POR_DEFECTO
+    assert (
+        campos_permitidos_evento(TIPO_EVENTO_CANCELACION)
+        == (CAMPOS_PERMITIDOS_POR_EVENTO[TIPO_EVENTO_CANCELACION])
+    )
+
+
+@pytest.mark.parametrize(
+    ("id_evento", "etiqueta", "valor"),
+    [
+        (1, "Fecha Retiro", "2026-04-01"),
+        (1, "Fecha Notif. Retiro", "2026-03-30"),
+        (1, "Fecha Suspensión", "2026-05-10"),
+        (3, "Fecha Retiro", "2026-04-01"),
+        (2, "Fecha Retiro", "2026-04-01"),
+        (2, "Fecha Notif. Retiro", "2026-03-30"),
+        (2, "Fecha Suspensión", "2026-05-10"),
+        (4, "Fecha Certificado", "2026-04-01"),
+        (4, "Fecha Prueba", "2026-04-01"),
+        (4, "Fecha Suspensión", "2026-05-10"),
+        (4, "Evaluador", "Intruso"),
+        (4, "Vehículo Evaluado", 9),
+    ],
+)
+def test_actualizar_registros_seguros_rechaza_campos_incompatibles(
+    repositorio: EventosRepository,
+    motor_sqlite: Engine,
+    id_evento: int,
+    etiqueta: str,
+    valor: object,
+) -> None:
+    """CA-02/S-02: cada campo prohibido por la matriz se rechaza con rollback atómico."""
+    # Arrange
+    columna = _columna_fisica(etiqueta)
+    original = _celda(motor_sqlite, id_evento, columna)
+    cambio = CambioRegistro(id_evento, etiqueta, valor)
+
+    # Act
+    with pytest.raises(CampoIncompatibleError) as error:
+        repositorio.actualizar_registros_seguros("eventos", [cambio], "admin")
+
+    # Assert: mensaje descriptivo, dato intacto y sin auditoría (rollback)
+    assert etiqueta in str(error.value)
+    assert MENSAJE_CAMPO_INCOMPATIBLE.split("«")[0].strip() in str(error.value)
+    assert _celda(motor_sqlite, id_evento, columna) == original
+    assert _auditoria(motor_sqlite) == []
+
+
+def test_actualizar_registros_seguros_permite_nulo_en_campo_prohibido(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """S-02: asignar nulo a un campo prohibido no cuenta como valor incompatible."""
+    # Arrange: el evento 1 (certificación) tiene fecha_retiro en NULL
+    cambio = CambioRegistro(1, "Fecha Retiro", None)
+
+    # Act
+    afectados = repositorio.actualizar_registros_seguros("eventos", [cambio], "admin")
+
+    # Assert
+    assert afectados == 1
+    assert _celda(motor_sqlite, 1, "fecha_retiro") is None
+
+
+def test_actualizar_registros_seguros_limpia_campos_al_cambiar_tipo(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-03/S-03: cambiar a cancelación limpia los campos exclusivos de certificación."""
+    # Arrange
+    cambio = CambioRegistro(1, "Evento", "Cancelación")
+
+    # Act
+    afectados = repositorio.actualizar_registros_seguros("eventos", [cambio], "admin")
+
+    # Assert
+    assert afectados == 1
     with motor_sqlite.connect() as conexion:
         fila = conexion.execute(
             text(
-                "SELECT fecha_suspension, fecha_prueba FROM fact_eventos_operador "
-                "WHERE id_hecho_evento = 3"
+                "SELECT id_tipo_evento, fecha_certificado, fecha_prueba, evaluador, "
+                "id_vehiculo_evaluado, observacion FROM fact_eventos_operador "
+                "WHERE id_hecho_evento = 1"
             )
         ).one()
-    assert str(fila[0]) == "2026-05-10"
-    assert str(fila[1]) == "2026-05-08"
+    assert int(fila[0]) == TIPO_EVENTO_CANCELACION
+    assert fila[1] is None
+    assert fila[2] is None
+    assert fila[3] is None
+    assert fila[4] is None
+    assert str(fila[5]) == "Certificado inicial"
+    assert _auditoria(motor_sqlite) == [
+        (f"{ACCION_EDITAR_TABLA} Eventos", "IDs: 1; Columnas: Evento")
+    ]
+
+
+@pytest.mark.parametrize(
+    ("etiqueta", "valor"),
+    [
+        ("Fecha Certificado", "2030-01-01"),
+        ("Fecha Certificado", "2026/01/08"),
+        ("Fecha Prueba", "2026-13-40"),
+    ],
+)
+def test_actualizar_registros_seguros_rechaza_fechas_invalidas(
+    repositorio: EventosRepository,
+    motor_sqlite: Engine,
+    etiqueta: str,
+    valor: str,
+) -> None:
+    """CA-04/S-04: una fecha futura lejana o con formato inválido se rechaza."""
+    # Arrange
+    cambio = CambioRegistro(1, etiqueta, valor)
+
+    # Act
+    with pytest.raises(ValorInvalidoError):
+        repositorio.actualizar_registros_seguros("eventos", [cambio], "admin")
+
+    # Assert
+    assert _auditoria(motor_sqlite) == []
 
 
 # --- Spec 018: listas oficiales de licencias y comportamientos --------------
@@ -1514,6 +1697,80 @@ def test_configuracion_columnas_eventos_configura_las_columnas_de_negocio() -> N
     ):
         assert config[etiqueta]["type_config"]["type"] == "text"
     assert config["Vehículo Evaluado"]["type_config"]["type"] == "number"
+
+
+# --- UI (spec 020): proyección de columnas por tipo de evento ---------------
+def test_columnas_por_tipo_evento_proyecta_solo_las_aplicables() -> None:
+    """CA-04/S-05: al filtrar por cancelación solo quedan las columnas aplicables."""
+    # Arrange
+    definicion = _definicion("eventos")
+
+    # Act
+    proyectada = ui.columnas_por_tipo_evento(definicion, TIPO_EVENTO_CANCELACION)
+
+    # Assert
+    assert [columna.etiqueta for columna in proyectada.columnas] == [
+        "Código",
+        "Cédula",
+        "Nombre",
+        "Evento",
+        "Fecha Retiro",
+        "Fecha Notif. Retiro",
+        "Observación",
+        "Registro",
+    ]
+    assert [columna.etiqueta for columna in proyectada.editables] == [
+        "Código",
+        "Evento",
+        "Fecha Retiro",
+        "Fecha Notif. Retiro",
+        "Observación",
+    ]
+
+
+def test_columnas_por_tipo_evento_todos_conserva_todas() -> None:
+    """CA-04/S-05: con «Todos» (id nulo) se conserva la definición completa."""
+    # Arrange
+    definicion = _definicion("eventos")
+
+    # Act / Assert
+    assert ui.columnas_por_tipo_evento(definicion, None) is definicion
+
+
+def test_id_tipo_evento_por_nombre_resuelve_el_catalogo() -> None:
+    """CA-04/S-05: el nombre seleccionado se traduce al identificador del catálogo."""
+    # Arrange
+    tipos = [TipoEventoInfo(1, "Certificación"), TipoEventoInfo(7, "Cancelación")]
+
+    # Act / Assert
+    assert ui.id_tipo_evento_por_nombre(tipos, "Cancelación") == 7
+    assert ui.id_tipo_evento_por_nombre(tipos, "Inexistente") is None
+
+
+def test_filas_por_tipo_evento_filtra_por_nombre() -> None:
+    """CA-04/S-05: solo permanecen las filas del tipo seleccionado."""
+    # Arrange
+    filas: list[dict[str, object]] = [
+        {"ID": 1, ETIQUETA_EVENTO: "Certificación"},
+        {"ID": 2, ETIQUETA_EVENTO: "Cancelación"},
+    ]
+
+    # Act / Assert
+    assert ui.filas_por_tipo_evento(filas, "Cancelación") == [filas[1]]
+    assert ui.filas_por_tipo_evento(filas, "") == filas
+
+
+def test_ui_adapta_columnas_por_tipo_evento_de_la_spec_020() -> None:
+    """CA-04/S-05: la UI proyecta columnas por tipo y captura el error de compatibilidad."""
+    # Arrange
+    contenido = _RUTA_UI.read_text(encoding="utf-8")
+
+    # Act / Assert
+    assert "columnas_por_tipo_evento(" in contenido
+    assert "st.selectbox(" in contenido
+    assert "CampoIncompatibleError" in contenido
+    assert "MENSAJE_RESTRICCIONES_EVENTO" in contenido
+    assert "columnas aplicables" in contenido
 
 
 # --- Criterios de aceptación verificables ------------------------------------

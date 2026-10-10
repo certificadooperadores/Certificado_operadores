@@ -23,8 +23,8 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `gestion_usuarios` | `src/certificado_operadores/modulos/gestion_usuarios/ui.py` | Interfaz Streamlit de gestión de usuarios; consume el Facade y no contiene SQL. |
 | `infra.backup_service` | `src/certificado_operadores/infra/backup_service.py` | Servicio de copias de seguridad de SQLite; encapsula el sistema de archivos, la comparación y la restauración. |
 | `administrar_backups` | `src/certificado_operadores/modulos/administrar_backups/ui.py` | Interfaz Streamlit de backups; consume `BackupService` y no contiene SO ni SQL. |
-| `infra.eventos_repository` | `src/certificado_operadores/infra/eventos_repository.py` | Acceso a datos de `fact_eventos_operador`: filtros, lotes, mutaciones con auditoría, integridad referencial, catálogos oficiales y columnas completas de negocio (specs 006, 015, 017, 018 y 019). |
-| `correccion_registros` | `src/certificado_operadores/modulos/correccion_registros/ui.py` | Interfaz Streamlit de corrección de registros con editor tipo Excel, búsqueda rápida y acciones en bloque; consume `EventosRepository` y no contiene SQL. |
+| `infra.eventos_repository` | `src/certificado_operadores/infra/eventos_repository.py` | Acceso a datos de `fact_eventos_operador`: filtros, lotes, mutaciones con auditoría, integridad referencial, catálogos oficiales, columnas completas de negocio y bloqueo de campos por categoría de evento (specs 006, 015, 017, 018, 019 y 020). |
+| `correccion_registros` | `src/certificado_operadores/modulos/correccion_registros/ui.py` | Interfaz Streamlit de corrección de registros con editor tipo Excel, búsqueda rápida, acciones en bloque y proyección de columnas por categoría de evento; consume `EventosRepository` y no contiene SQL. |
 | `infra.catalogos_repository` | `src/certificado_operadores/infra/catalogos_repository.py` | Acceso a datos de los cinco catálogos (empresas, vehículos, impactos, comportamientos y detalles) con auditoría (SQLAlchemy). |
 | `catalogos` | `src/certificado_operadores/modulos/catalogos/ui.py` | Interfaz Streamlit de catálogos; consume `CatalogosRepository` y no contiene SQL. |
 | `infra.certificados_repository` | `src/certificado_operadores/infra/certificados_repository.py` | Acceso a datos del registro de eventos y certificados: catálogos auxiliares, operador activo y registro con auditoría (SQLAlchemy). |
@@ -385,8 +385,12 @@ de listas desplegables** (licencias `C1`/`C2`/`C3` y fuentes/descripciones de
 **Eventos** con las **columnas completas de negocio** de Metrocali: las cinco
 fechas (certificado, retiro, notificación de retiro, suspensión y prueba),
 evaluador, vehículo evaluado y observación, todas editables, dejando `Cédula`,
-`Nombre` y `Registro` como columnas protegidas. Cada mutación registra su acción
-en `log_auditoria` dentro de la misma transacción.
+`Nombre` y `Registro` como columnas protegidas. La spec 020 añade la **matriz de
+compatibilidad `CAMPOS_PERMITIDOS_POR_EVENTO`** por categoría de evento, la
+excepción `CampoIncompatibleError`, el **rechazo atómico** de campos prohibidos
+(S-02), la **limpieza a `NULL`** de los campos huérfanos al cambiar el tipo de
+evento (S-03) y la **validación de plausibilidad de fechas** (S-04). Cada mutación
+registra su acción en `log_auditoria` dentro de la misma transacción.
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
@@ -410,9 +414,19 @@ en `log_auditoria` dentro de la misma transacción.
 | `EventosRepository.eliminar_registros_tabla` | `(clave: str, ids: list[int], usuario: str) -> int` | Spec 015/017: elimina los IDs de una tabla; S-01 bloquea si tienen hijos dependientes. | `int` |
 | `EventosRepository.contar_dependencias_operador` | `(id_persona: int, id_codigo: int \| None = None) -> dict[str, int]` | Spec 017/S-01: cuenta eventos, comportamientos y licencias del operador. | `dict` |
 | `EventosRepository.validar_codigo_existe` | `(id_codigo: int) -> bool` | Spec 017/S-02: indica si el código existe en `dim_codigo`. | `bool` |
-| `EventosRepository.actualizar_registros_seguros` | `(clave: str, cambios: list[CambioRegistro], usuario: str) -> int` | Spec 017/S-03..S-05: aplica ediciones validadas en una transacción atómica con auditoría. | `int` |
+| `EventosRepository.actualizar_registros_seguros` | `(clave: str, cambios: list[CambioRegistro], usuario: str) -> int` | Specs 017/020: aplica ediciones validadas en una transacción atómica con auditoría; en Eventos aplica la matriz por categoría. | `int` |
+| `EventosRepository._aplicar_cambios_simples` | `(conexion, definicion, cambios) -> int` | Spec 017: aplica los cambios genéricos de una tabla sin reglas por categoría. | `int` |
+| `EventosRepository._aplicar_cambios_evento` | `(conexion, definicion, cambios) -> int` | Spec 020: agrupa los cambios de Eventos por fila y delega su validación/ejecución. | `int` |
+| `EventosRepository._aplicar_cambios_evento_fila` | `(conexion, definicion, id_registro, cambios_fila) -> int` | Spec 020: valida compatibilidad y fechas, ejecuta los cambios y limpia campos huérfanos. | `int` |
+| `EventosRepository._tipo_evento_efectivo` | `(conexion, id_registro, columnas, cambios_fila) -> tuple[int \| None, str]` | Spec 020: resuelve el tipo de evento efectivo (nuevo o actual) de una fila. | `tuple` |
+| `EventosRepository._nombre_tipo_evento` | `(conexion, id_tipo_evento) -> str` | Spec 020: nombre legible de un tipo de evento (o su id). | `str` |
+| `EventosRepository._validar_compatibilidad_evento` | `(cambios_fila, columnas, permitidos, nombre_evento) -> None` | Spec 020/S-02/S-04: rechaza campos prohibidos y fechas inválidas. | — |
+| `EventosRepository._limpiar_campos_huerfanos` | `(conexion, definicion, id_registro, permitidos) -> None` | Spec 020/S-03: resetea a `NULL` los campos incompatibles con el nuevo tipo. | — |
 | `EventosRepository._verificar_dependencias` | `(definicion: DefinicionTabla, ids: list[int]) -> None` | Spec 017/S-01: aborta el borrado si hay hijos dependientes. | — |
 | `EventosRepository._resolver_valor` | `(conexion: Connection, columna: ColumnaEditable, valor: object) -> object` | Spec 017: valida y normaliza el valor de una celda editable. | `object` |
+| `campos_permitidos_evento` | `(id_tipo_evento: int) -> frozenset[str]` | Spec 020/S-01: columnas permitidas de una categoría (restrictivas si no está listada). | `frozenset` |
+| `_valor_vacio` | `(valor: object) -> bool` | Spec 020: indica si una celda está vacía (`None`, cadena en blanco o `NaN`). | `bool` |
+| `_validar_fecha_evento` | `(valor: object, etiqueta: str) -> None` | Spec 020/S-04: valida formato `AAAA-MM-DD` y rechaza fechas futuras inverosímiles. | — |
 | `_definicion` | `(clave: str) -> DefinicionTabla` | Busca la tabla en el catálogo; lanza `ValueError` si no existe. | `DefinicionTabla` |
 | `_sql_listar` | `(definicion: DefinicionTabla) -> TextClause` | Construye el `SELECT` compacto aliasando columnas por posición. | `TextClause` |
 | `_sql_cambiar_vigencia` | `(definicion: DefinicionTabla) -> TextClause` | Construye el `UPDATE ... IN :ids` de la tabla. | `TextClause` |
@@ -430,15 +444,20 @@ spec 015 `ColumnaTabla`, `DefinicionTabla` y `RegistroInfo`; la spec 017 añade
 `ColumnaEditable` (columna editable: etiqueta, columna física y tipo) y
 `CambioRegistro` (cambio de celda: id, etiqueta y valor). Excepciones:
 `DependenciaRegistroError` (S-01), `CodigoInexistenteError` (S-02),
-`ColumnaProtegidaError` (S-03) y `ValorInvalidoError` (S-04). Constantes:
+`ColumnaProtegidaError` (S-03), `ValorInvalidoError` (S-04) y, de la spec 020,
+`CampoIncompatibleError` (S-02). Constantes:
 `LIMITE_POR_DEFECTO`, `FORMATO_LOTE`, `ESTADO_VIGENTE_TEXTO`,
 `ESTADO_ANULADO_TEXTO`, `TABLA_PERSONA`, `ETIQUETA_ESTADO`, `OPCION_VIGENTE`,
 `OPCION_ANULADO`, `OPCIONES_ESTADO`, `GENEROS_VALIDOS`, `OPCIONES_LICENCIA`
 (`C1`/`C2`/`C3`, spec 018), los tipos de edición
 `TIPO_EDICION_*`, los mensajes `MENSAJE_*` (dependencias, código inexistente,
-columna protegida y valor inválido), `TABLAS_CORRECCION` y las acciones de
-auditoría `ACCION_*` (incluidas `ACCION_REACTIVAR_TABLA`, `ACCION_ANULAR_TABLA`,
-`ACCION_ELIMINAR_TABLA` y `ACCION_EDITAR_TABLA`).
+columna protegida, valor inválido, campo incompatible y fechas, spec 020),
+`TABLAS_CORRECCION` y las acciones de auditoría `ACCION_*` (incluidas
+`ACCION_REACTIVAR_TABLA`, `ACCION_ANULAR_TABLA`, `ACCION_ELIMINAR_TABLA` y
+`ACCION_EDITAR_TABLA`). La spec 020 añade además `CAMPOS_PERMITIDOS_POR_EVENTO`
+(matriz `id_tipo_evento -> columnas`), `CAMPOS_EVENTO_EDITABLES`,
+`CAMPOS_EVENTO_POR_DEFECTO`, `CAMPOS_FECHA_EVENTO`, `CLAVE_TABLA_EVENTOS`,
+`ETIQUETA_EVENTO` y los identificadores `TIPO_EVENTO_*`.
 
 ### Módulo `correccion_registros` — `src/certificado_operadores/modulos/correccion_registros/ui.py`
 
@@ -456,13 +475,19 @@ Anulado`` y ``Eliminar`` sobre las filas marcadas con la casilla ``Seleccionar``
 La spec 019 expone en la sub-pestaña Eventos las **columnas completas de negocio**
 (fechas de certificado, retiro, notificación, suspensión y prueba, evaluador,
 vehículo evaluado y observación) como celdas editables, manteniendo `Cédula`,
-`Nombre` y `Registro` de solo lectura.
+`Nombre` y `Registro` de solo lectura. La spec 020 añade un **selector de tipo de
+evento** en la cabecera que proyecta las columnas visibles y editables a las
+aplicables a la categoría elegida (o muestra todas con un aviso orientativo en
+«Todos») y captura `CampoIncompatibleError` al guardar.
 No contiene sentencias SQL (RNF-01) ni conoce el esquema (RNF-02).
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
 | `filas_editor` | `(definicion: DefinicionTabla, registros: list[RegistroInfo]) -> list[dict[str, object]]` | Spec 017: mapea los DTOs a filas del editor con `Estado` restringido. | `list[dict]` |
 | `opciones_evento` | `(nombres_evento: list[str]) -> list[str]` | Spec 017: opciones de la lista de tipos de evento, sin duplicados. | `list[str]` |
+| `id_tipo_evento_por_nombre` | `(tipos_evento: list[TipoEventoInfo], nombre: str) -> int \| None` | Spec 020/S-05: traduce el nombre del tipo de evento a su identificador. | `int` o `None` |
+| `columnas_por_tipo_evento` | `(definicion: DefinicionTabla, id_tipo_evento: int \| None) -> DefinicionTabla` | Spec 020/S-05: proyecta Eventos a las columnas aplicables a la categoría. | `DefinicionTabla` |
+| `filas_por_tipo_evento` | `(filas: list[dict[str, object]], nombre_evento: str) -> list[dict[str, object]]` | Spec 020/S-05: deja solo las filas del tipo de evento indicado. | `list[dict]` |
 | `columnas_protegidas` | `(definicion: DefinicionTabla) -> list[str]` | Spec 017/S-03: encabezados de solo lectura (ID y columnas no editables). | `list[str]` |
 | `configuracion_columnas` | `(definicion: DefinicionTabla, opciones_evento: list[str], opciones_fuente: list[str] \| None = None, opciones_descripcion: list[str] \| None = None) -> dict[str, Any]` | Specs 017/018: `column_config` del editor (SelectboxColumn, CheckboxColumn y columnas numéricas). | `dict` |
 | `filtrar_filas` | `(filas: list[dict[str, object]], termino: str) -> list[dict[str, object]]` | Spec 018: busca el término en cualquier celda (sin distinguir mayúsculas). | `list[dict]` |
@@ -481,14 +506,16 @@ No contiene sentencias SQL (RNF-01) ni conoce el esquema (RNF-02).
 | `_procesar_guardado` | `(repositorio, definicion, original, editor, rol, usuario) -> None` | Aplica ediciones y eliminaciones con manejo de errores. | — |
 | `_procesar_bloque` | `(repositorio, definicion, ids, vigencia, rol, usuario) -> None` | Spec 018: aplica la acción en bloque (vigencia o eliminación) con auditoría. | — |
 | `_render_encabezado` | `() -> None` | Ayuda del módulo. | — |
-| `_render_tabla` | `(repositorio, definicion, rol, usuario, opciones_tipo_evento, opciones_fuente, opciones_descripcion) -> None` | Renderiza búsqueda, editor Excel y acciones en bloque de una sub-pestaña. | — |
+| `_render_tabla` | `(repositorio, definicion, rol, usuario, tipos_evento, opciones_fuente, opciones_descripcion) -> None` | Renderiza filtros (incluido el de categoría), editor Excel y acciones en bloque de una sub-pestaña. | — |
 | `render_correccion_registros` | `(repositorio: EventosRepository \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
 
 Constantes: `ETIQUETA_GUARDAR`, `MENSAJE_DISPONIBLE`, `ERROR_ELIMINAR_SIN_PERMISO`,
 `MENSAJE_SIN_CAMBIOS` y, de la spec 018, `ETIQUETA_FILTRO`, `PLACEHOLDER_FILTRO`,
 `ETIQUETA_SELECCION`, `ETIQUETA_VIGENTE_BLOQUE`, `ETIQUETA_ANULADO_BLOQUE`,
 `ETIQUETA_ELIMINAR_BLOQUE`, `MENSAJE_SIN_SELECCION`, `MENSAJE_SIN_COINCIDENCIAS`;
-más los prefijos de claves de sesión `PREFIJO_CLAVE_*` (incluidos
+de la spec 020, `ETIQUETA_TIPO_EVENTO`, `OPCION_TODOS_EVENTOS` y
+`MENSAJE_RESTRICCIONES_EVENTO`; más los prefijos de claves de sesión
+`PREFIJO_CLAVE_*` (incluidos
 `PREFIJO_CLAVE_FILTRO` y `PREFIJO_CLAVE_BLOQUE`) y `CLAVE_TIPO_MENSAJE`. Punto de
 entrada:
 `src/certificado_operadores/pages/1_Configuracion.py` (importa
@@ -513,7 +540,11 @@ redirección a esta interfaz.
   del catálogo); de la spec 019 (presencia de las columnas completas de negocio en
   la definición de `Eventos` y su tipo de edición, listado de fechas/evaluador/
   vehículo/observación, y persistencia al editar fechas de certificado, retiro,
-  notificación, suspensión y prueba, evaluador, vehículo y observación); funciones
+  notificación, prueba, evaluador, vehículo y observación); de la spec 020 (matriz
+  `CAMPOS_PERMITIDOS_POR_EVENTO` por categoría, rechazo atómico de campos
+  incompatibles con `CampoIncompatibleError`, limpieza a `NULL` de campos huérfanos
+  al cambiar el tipo de evento, validación de fechas con formato o valor inválidos,
+  y proyección de columnas y filas por tipo de evento en la UI); funciones
   puras de la UI (`filas_editor`,
   `columnas_protegidas`, `configuracion_columnas`, `detectar_cambios`,
   `ids_eliminados`, `opciones_evento`, `puede_eliminar`, `filtrar_filas`,
