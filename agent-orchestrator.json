@@ -1,6 +1,6 @@
 {
     "project_dir": ".",
-    "spec": "docs/specs/023-spec.md",
+    "spec": "docs/specs/024-spec.md",
     "temp_dir": "temp_agent",
     "gate": {
         "command": [
@@ -13,7 +13,7 @@
             "C:\\Users\\maortiz\\AppData\\Roaming\\ai.opencode.desktop\\cli\\2.0.26\\opencode-cli.exe",
             "run",
             "--model",
-            "deepseek/deepseek-flash",
+            "deepseek/deepseek-v4-pro",
             "--agent",
             "build",
             "--auto",
