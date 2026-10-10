@@ -10,28 +10,28 @@
 
 - [x] **T-01** — Escribir especificación técnica, plan y tareas.
   - Estado: hecho
-- [ ] **T-02** — Actualizar Facade / Repositorio con métodos necesarios.
-  - Criterio de aceptación: La capa de infraestructura soporta los métodos de catalogos.
+- [ ] **T-02** — Crear repositorio de catálogos (`catalogos_repository.py`) para operaciones CRUD de las 5 dimensiones.
+  - Criterio de aceptación: Operaciones sobre dim_empresa, dim_vehiculo, dim_impacto, dim_comportamiento, dim_detalle_comportamiento desacopladas.
   - Estado: pendiente
-- [ ] **T-03** — Crear la carpeta `modulos/catalogos/` y su archivo `ui.py`.
-  - Criterio de aceptación: Lógica visual extraída, 0% SQL.
+- [ ] **T-03** — Crear el paquete `modulos/catalogos/` con `ui.py` y `__init__.py`.
+  - Criterio de aceptación: Función `render_catalogos()` creada sin sentencias SQL.
   - Estado: pendiente
-- [ ] **T-04** — Crear página principal en `pages/`.
-  - Criterio de aceptación: Importa `render_page()` desde el nuevo módulo.
+- [ ] **T-04** — Limpiar `pages/1_Configuracion.py` eliminando el último `exec`.
+  - Criterio de aceptación: Importa y llama `render_catalogos()`; 0 `exec` en la página.
   - Estado: pendiente
-- [ ] **T-05** — Borrar archivo residual de la carpeta heredada `modulos/`.
-  - Criterio de aceptación: `4_Catalogos.py` eliminado.
+- [ ] **T-05** — Pruebas unitarias en `tests/test_catalogos.py`.
+  - Criterio de aceptación: `make test` pasa 100% en verde.
   - Estado: pendiente
 
 ## Progreso
 
 | Tarea | Estado | Commit |
 |-------|--------|--------|
-| T-01  | ✅     | N/A    |
-| T-02  | ⏳     |        |
-| T-03  | ⏳     |        |
-| T-04  | ⏳     |        |
-| T-05  | ⏳     |        |
+| T-01  | hecho  | N/A    |
+| T-02  | pendiente |        |
+| T-03  | pendiente |        |
+| T-04  | pendiente |        |
+| T-05  | pendiente |        |
 
 ---
 

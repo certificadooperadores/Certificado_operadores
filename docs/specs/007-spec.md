@@ -10,32 +10,41 @@
 
 ## 1. Contexto y problema
 
-El archivo heredado `src/certificado_operadores/modulos/4_Catalogos.py` viola los principios de Clean Architecture al mezclar la interfaz visual de Streamlit con consultas directas a la base de datos. Esto produce acoplamiento fuerte y código difícil de mantener.
+El archivo heredado `src/certificado_operadores/modulos/4_Catalogos.py` gestiona cinco catálogos del sistema (`dim_empresa`, `dim_vehiculo`, `dim_impacto`, `dim_comportamiento`, `dim_detalle_comportamiento`) mezclando la interfaz de Streamlit con más de 20 consultas SQL directas (`SELECT`, `INSERT`, `UPDATE`).
+Actualmente, la página `src/certificado_operadores/pages/1_Configuracion.py` lo invoca como el último `exec` remanente: `exec(open("modulos/4_Catalogos.py").read(), globals())`.
 
 ## 2. Objetivos
 
-- Mover el módulo a una estructura modular estricta: **una carpeta exclusiva para el módulo** (ej. `src/certificado_operadores/modulos/catalogos/`), que contenga sus archivos con funciones únicas (ej. `ui.py` para las vistas de Streamlit, separadas del punto de entrada en `pages/`).
-- Eliminar por completo las sentencias SQL y las importaciones directas de la base de datos en la UI.
-- Aislar el acceso a datos en la capa Facade/Infraestructura que corresponda.
+- Extraer la lógica visual a una carpeta modular exclusiva: `src/certificado_operadores/modulos/catalogos/ui.py` con la función `render_catalogos()`.
+- Crear una capa de acceso a datos (`src/certificado_operadores/infra/catalogos_repository.py` o Facade) que encapsule las operaciones CRUD de los cinco catálogos.
+- En `src/certificado_operadores/pages/1_Configuracion.py`, reemplazar la llamada `exec(open("modulos/4_Catalogos.py").read(), globals())` por la importación limpia: `from modulos.catalogos.ui import render_catalogos`.
+- Completar la Fase 1: `pages/1_Configuracion.py` queda 100% libre de `exec` y 100% desacoplada.
+- Crear pruebas unitarias con `pytest` en `tests/test_catalogos.py`.
 
 ## 3. No-objetivos
 
-- Cambiar la paleta de colores de Streamlit o agregar nuevas funcionalidades de negocio.
+- No modificar la lógica de validación de negocio ni los identificadores de tablas.
 
 ## 4. Requisitos funcionales
 
-- **RF-01:** La funcionalidad visual actual del módulo catalogos debe mantenerse intacta, delegando el manejo de datos a la capa inferior.
+- **RF-01:** Listar, crear, activar/inactivar y renombrar empresas (`dim_empresa`).
+- **RF-02:** Listar, crear y renombrar vehículos (`dim_vehiculo`).
+- **RF-03:** Listar, crear y renombrar niveles de impacto (`dim_impacto`).
+- **RF-04:** Listar, crear y renombrar tipos de comportamientos (`dim_comportamiento`).
+- **RF-05:** Listar, crear y renombrar detalles de comportamientos (`dim_detalle_comportamiento`).
 
 ## 5. Requisitos no funcionales
 
-- **RNF-01 (Mantenibilidad):** El archivo de interfaz no debe contener la palabra `SELECT`, `UPDATE` o `INSERT`.
-- **RNF-02 (Desacople):** Si la base de datos cambia, la UI no debe verse afectada.
+- **RNF-01 (Mantenibilidad):** Cero sentencias SQL en `modulos/catalogos/ui.py` ni en `pages/1_Configuracion.py`.
+- **RNF-02 (Arquitectura):** Se elimina el último `exec` de `pages/1_Configuracion.py`.
+- **RNF-03 (Pruebas):** Pruebas unitarias en verde con `make test`.
 
 ## 6. Criterios de aceptación (verificables)
 
-- [ ] **CA-01:** El archivo refactorizado interactúa exclusivamente a través de la capa de aplicación (Facade).
-- [ ] **CA-02:** No existen consultas SQL en la vista visual.
-- [ ] **CA-03:** La aplicación Streamlit carga sin errores de sintaxis tras la refactorización.
+- [ ] **CA-01:** Existe el paquete `src/certificado_operadores/modulos/catalogos/` con `__init__.py` y `ui.py`.
+- [ ] **CA-02:** `pages/1_Configuracion.py` no contiene ninguna llamada a `exec`; importa y llama a `render_catalogos()`.
+- [ ] **CA-03:** Todas las operaciones de catálogos están desacopladas en el repositorio.
+- [ ] **CA-04:** `uv run pytest` pasa 100% en verde.
 
 ## 10. Enlaces
 
