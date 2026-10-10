@@ -371,11 +371,14 @@ Punto de entrada: `src/certificado_operadores/pages/1_Configuracion.py` (importa
 
 ### Módulo `infra.eventos_repository` — `src/certificado_operadores/infra/eventos_repository.py`
 
-Repositorio de eventos de operadores (spec 006). Encapsula todo el acceso a
-`fact_eventos_operador` y sus dimensiones: búsqueda con filtros, listado de
+Repositorio de eventos de operadores (specs 006 y 015). Encapsula todo el acceso
+a `fact_eventos_operador` y sus dimensiones: búsqueda con filtros, listado de
 tipos de evento, agrupamiento por lote (minuto de cargue) y mutaciones de
-reactivación, anulación y eliminación de registros o lotes. Cada mutación
-registra su acción en `log_auditoria` dentro de la misma transacción.
+reactivación, anulación y eliminación de registros o lotes. Además, la spec 015
+añade el **catálogo declarativo `TABLAS_CORRECCION`** (Eventos, Licencias,
+Comportamientos y Operadores) y un listado y mutación **genéricos por tabla**.
+Cada mutación registra su acción en `log_auditoria` dentro de la misma
+transacción.
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
@@ -392,38 +395,47 @@ registra su acción en `log_auditoria` dentro de la misma transacción.
 | `EventosRepository.anular_lote` | `(lote: str, usuario: str) -> int` | RF-02: anula el lote completo y audita. | `int` |
 | `EventosRepository.eliminar_lote` | `(lote: str, usuario: str) -> int` | RF-02: elimina el lote completo y audita. | `int` |
 | `EventosRepository.registrar_auditoria` | `(usuario, accion, detalles) -> None` | Registra una acción en `log_auditoria`. | — |
+| `EventosRepository.listar_registros` | `(clave: str, limite: int = LIMITE_POR_DEFECTO) -> list[RegistroInfo]` | Spec 015: lista de forma compacta los registros de una tabla del catálogo. | `list[RegistroInfo]` |
+| `EventosRepository.mutar_vigencia` | `(clave: str, ids: list[int], vigencia: int, usuario: str) -> int` | Spec 015: cambia la vigencia de los IDs de una tabla y audita. | `int` |
+| `EventosRepository.eliminar_registros_tabla` | `(clave: str, ids: list[int], usuario: str) -> int` | Spec 015: elimina físicamente los IDs de una tabla y audita. | `int` |
+| `_definicion` | `(clave: str) -> DefinicionTabla` | Busca la tabla en el catálogo; lanza `ValueError` si no existe. | `DefinicionTabla` |
+| `_sql_listar` | `(definicion: DefinicionTabla) -> TextClause` | Construye el `SELECT` compacto aliasando columnas por posición. | `TextClause` |
+| `_sql_cambiar_vigencia` | `(definicion: DefinicionTabla) -> TextClause` | Construye el `UPDATE ... IN :ids` de la tabla. | `TextClause` |
+| `_sql_eliminar_tabla` | `(definicion: DefinicionTabla) -> TextClause` | Construye el `DELETE ... IN :ids` de la tabla. | `TextClause` |
+| `_mapear_registro` | `(definicion: DefinicionTabla, fila: RowMapping) -> RegistroInfo` | Mapea una fila genérica al DTO con etiquetas y vigencia. | `RegistroInfo` |
 | `_mapear_evento` | `(fila: RowMapping) -> EventoInfo` | Mapea una fila de eventos al DTO. | `EventoInfo` |
 | `_condiciones_y_parametros` | `(filtro: FiltroEventos) -> tuple[list[str], dict[str, object]]` | Traduce el filtro a condiciones y parámetros enlazados. | `tuple` |
 
-DTOs: `TipoEventoInfo`, `EventoInfo`, `LoteInfo`, `FiltroEventos`. Constantes:
+DTOs: `TipoEventoInfo`, `EventoInfo`, `LoteInfo`, `FiltroEventos`, y los de la
+spec 015 `ColumnaTabla`, `DefinicionTabla` y `RegistroInfo`. Constantes:
 `LIMITE_POR_DEFECTO`, `FORMATO_LOTE`, `ESTADO_VIGENTE_TEXTO`,
-`ESTADO_ANULADO_TEXTO` y las acciones de auditoría `ACCION_*`.
+`ESTADO_ANULADO_TEXTO`, `TABLAS_CORRECCION` y las acciones de auditoría
+`ACCION_*` (incluidas `ACCION_REACTIVAR_TABLA`, `ACCION_ANULAR_TABLA` y
+`ACCION_ELIMINAR_TABLA`).
 
 ### Módulo `correccion_registros` — `src/certificado_operadores/modulos/correccion_registros/ui.py`
 
-Interfaz de Streamlit de corrección de registros (spec 006). Página delgada:
-filtra eventos y delega reactivar, anular y eliminar (individuales o por lote)
-en `EventosRepository`. No contiene sentencias SQL (RNF-01) ni conoce el esquema
+Interfaz de Streamlit de corrección de registros (spec 015). Página delgada:
+organiza la corrección en **sub-pestañas por tabla** (Eventos, Licencias,
+Comportamientos y Operadores), muestra en cada una la tabla interactiva con
+selección múltiple y búsqueda nativas —sin formularios externos de filtros— y
+delega el cambio de estado o la eliminación de las filas seleccionadas en
+`EventosRepository`. No contiene sentencias SQL (RNF-01) ni conoce el esquema
 (RNF-02).
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
-| `parsear_entero_positivo` | `(texto: str) -> int \| None` | Convierte el texto de un campo en un entero positivo. | `int` o `None` |
-| `opciones_tipos_evento` | `(tipos: list[TipoEventoInfo]) -> list[str]` | Construye las opciones "id - nombre" del selector. | `list[str]` |
-| `id_tipo_evento_desde_opcion` | `(opcion: str) -> int \| None` | Extrae el id del tipo de evento de la opción. | `int` o `None` |
-| `vigencia_desde_estado` | `(estado: str) -> int \| None` | Traduce la opción de estado a la vigencia. | `int` o `None` |
-| `construir_filtro` | `(codigo, cedula, tipo_evento, estado, fecha_desde, fecha_hasta) -> FiltroEventos` | Traduce los campos del formulario a un filtro. | `FiltroEventos` |
-| `etiqueta_lote` | `(lote: LoteInfo) -> str` | Etiqueta "YYYY-MM-DD HH:MM (n reg.)" del selector. | `str` |
-| `lote_desde_etiqueta` | `(etiqueta: str) -> str` | Recupera la marca temporal de la etiqueta. | `str` |
-| `filas_eventos` | `(eventos: list[EventoInfo]) -> list[dict[str, object]]` | Mapea los DTOs a filas legibles para `st.dataframe`. | `list[dict]` |
+| `filas_registros` | `(definicion: DefinicionTabla, registros: list[RegistroInfo]) -> list[dict[str, object]]` | Mapea los DTOs a filas legibles para `st.dataframe`. | `list[dict]` |
 | `filas_seleccionadas` | `(seleccion: object) -> list[int]` | Extrae los índices marcados en la tabla. | `list[int]` |
+| `ids_seleccionados` | `(registros: list[RegistroInfo], indices: list[int]) -> list[int]` | Traduce índices a IDs, descartando los fuera de rango. | `list[int]` |
 | `puede_eliminar` | `(rol: str) -> bool` | Indica si el rol puede eliminar (solo Super Admin). | `bool` |
-| `_como_fecha` | `(valor: object) -> date \| None` | Normaliza el valor de `st.date_input` a fecha. | `date` o `None` |
+| `_render_acciones` | `(repositorio, definicion, registros, seleccion, rol, usuario) -> None` | Barra compacta de acciones sobre las filas seleccionadas. | — |
+| `_render_tabla` | `(repositorio, definicion, rol, usuario) -> None` | Renderiza la tabla interactiva y sus acciones. | — |
 | `render_correccion_registros` | `(repositorio: EventosRepository \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
 
-Constantes: `ETIQUETA_TODOS`, `OPCION_VIGENTE`, `OPCION_ANULADO`,
-`OPCIONES_ESTADO`, `SEPARADOR_OPCION`, `SEPARADOR_ETIQUETA_LOTE`. Punto de
-entrada: `src/certificado_operadores/pages/1_Configuracion.py` (importa
+Constantes: `ETIQUETA_REACTIVAR`, `ETIQUETA_ANULAR`, `ETIQUETA_ELIMINAR` y los
+prefijos de claves de sesión `PREFIJO_CLAVE_*`. Punto de entrada:
+`src/certificado_operadores/pages/1_Configuracion.py` (importa
 `render_correccion_registros` y lo invoca en la pestaña de corrección). El
 módulo heredado `modulos/3_Modificacion_Tablas.py` quedó **deprecado** como
 redirección a esta interfaz.
@@ -432,15 +444,16 @@ redirección a esta interfaz.
 
 - **Ubicación:** `tests/test_correccion_registros.py`
 - **Cobertura:** repositorio contra SQLite temporal (tipos de evento, búsqueda
-  por código/cédula/tipo/vigencia/rango de fechas y límite, lotes y su detalle,
-  reactivar/anular/eliminar individual y por lote con auditoría, selección
-  vacía); funciones puras de la UI (`parsear_entero_positivo`,
-  `opciones_tipos_evento`, `id_tipo_evento_desde_opcion`,
-  `vigencia_desde_estado`, `construir_filtro`, `etiqueta_lote`/`lote_desde_etiqueta`,
-  `filas_eventos`, `filas_seleccionadas`, `puede_eliminar`); y criterios
-  estáticos (paquete CA-01, UI sin SQL CA-02/RNF-01, página sin funciones
-  inlined con `render_correccion_registros` CA-02, módulo heredado deprecado sin
-  SQL). Patrón AAA.
+  por código/vigencia/rango de fechas y límite, lotes, reactivar/anular/eliminar
+  individual y por lote con auditoría) y de la spec 015 (catálogo de las cuatro
+  tablas, listado genérico por tabla, `mutar_vigencia` y
+  `eliminar_registros_tabla` con auditoría, selección vacía, clave desconocida);
+  funciones puras de la UI (`filas_registros`, `filas_seleccionadas`,
+  `ids_seleccionados`, `puede_eliminar`); y criterios estáticos (paquete CA-01,
+  sub-pestañas por tabla CA-01, tabla con selección múltiple CA-03, sin filtros
+  externos masivos CA-02, botones de acción CA-04, UI sin SQL CA-02/RNF-01,
+  página sin funciones inlined con `render_correccion_registros` CA-02, módulo
+  heredado deprecado sin SQL). Patrón AAA.
 
 ### Módulo `infra.catalogos_repository` — `src/certificado_operadores/infra/catalogos_repository.py`
 
