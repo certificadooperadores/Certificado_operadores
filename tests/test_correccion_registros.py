@@ -1,14 +1,17 @@
-"""Pruebas de la corrección de registros (specs 015 y 017).
+"""Pruebas de la corrección de registros (specs 015, 017 y 018).
 
 Cubren cinco frentes: el repositorio ``EventosRepository`` contra una base
 SQLite temporal (búsqueda con filtros y mutaciones de la spec 006, el listado y
-las mutaciones genéricas por tabla de la spec 015, y las validaciones de
-integridad referencial y edición segura de la spec 017), las funciones puras de
-la UI tipo Excel, el catálogo de tablas soportadas y las verificaciones estáticas
-de los criterios de aceptación: el paquete existe, la UI usa ``st.data_editor``
-con columnas protegidas y listas desplegables, no contiene SQL, expone el botón
-de guardado y el repositorio valida dependencias y códigos. Todas las pruebas
-siguen el patrón AAA (*Arrange · Act · Assert*).
+las mutaciones genéricas por tabla de la spec 015, las validaciones de
+integridad referencial y edición segura de la spec 017, y los catálogos
+oficiales y la tabla de códigos de la spec 018), las funciones puras de la UI
+tipo Excel (incluidas la búsqueda rápida y las acciones en bloque de la spec
+018), el catálogo de tablas soportadas y las verificaciones estáticas de los
+criterios de aceptación: el paquete existe, la UI usa ``st.data_editor`` con
+columnas protegidas y listas desplegables, ofrece el buscador rápido, expone los
+botones de acción en bloque y de guardado, no contiene SQL, y el repositorio
+valida dependencias y códigos. Todas las pruebas siguen el patrón AAA
+(*Arrange · Act · Assert*).
 
 Autor: Ing. Miguel Angel Ortiz Roldan
 """
@@ -40,6 +43,7 @@ from certificado_operadores.infra.eventos_repository import (
     GENEROS_VALIDOS,
     OPCION_ANULADO,
     OPCION_VIGENTE,
+    OPCIONES_LICENCIA,
     TABLA_PERSONA,
     TABLAS_CORRECCION,
     CambioRegistro,
@@ -65,8 +69,8 @@ _LOTE_CORTO = "2026-01-10 08:15"
 _LOTE_MEDIO = "2026-01-10 09:40"
 _LOTE_TARDIO = "2026-02-05 09:40"
 
-CLAVES_TABLAS = ("eventos", "licencias", "comportamientos", "operadores")
-ETIQUETAS_TABLAS = ("Eventos", "Licencias", "Comportamientos", "Operadores")
+CLAVES_TABLAS = ("eventos", "licencias", "comportamientos", "operadores", "codigos")
+ETIQUETAS_TABLAS = ("Eventos", "Licencias", "Comportamientos", "Operadores", "Códigos")
 
 # --- Esquema mínimo para las pruebas del repositorio ------------------------
 _ESQUEMA = (
@@ -89,7 +93,24 @@ _ESQUEMA = (
     """
     CREATE TABLE dim_codigo (
         id_codigo INTEGER PRIMARY KEY,
-        id_persona INTEGER NOT NULL
+        id_persona INTEGER NOT NULL,
+        id_empresa INTEGER,
+        id_vigencia INTEGER,
+        fecha_registro TEXT
+    );
+    """,
+    """
+    CREATE TABLE dim_empresa (
+        id_empresa INTEGER PRIMARY KEY,
+        nombre_empresa TEXT
+    );
+    """,
+    """
+    CREATE TABLE dim_detalle_comportamiento (
+        id_jerarquia INTEGER PRIMARY KEY,
+        fuente TEXT,
+        descripcion_comportamiento TEXT,
+        id_comportamiento INTEGER
     );
     """,
     """
@@ -155,6 +176,25 @@ _COMPORTAMIENTOS = (
     (2, 5002, "Operativo", "Alta sin cinturón", "2026-02-05", VIGENCIA_ACTIVA, "2026-02-06"),
 )
 
+_EMPRESAS = (
+    # (id_empresa, nombre_empresa)
+    (1, "Metro Línea S.A."),
+    (2, "Blanco y Negro S.A."),
+)
+
+_DETALLES_COMPORTAMIENTO = (
+    # (id_jerarquia, fuente, descripcion_comportamiento, id_comportamiento)
+    (1, "PQRS", "Exceso de velocidad", 1),
+    (2, "Operativo", "Alta sin cinturón", 2),
+)
+
+_CODIGOS = (
+    # (id_codigo, id_persona, id_empresa, id_vigencia, fecha_registro)
+    (5001, 1001, 1, VIGENCIA_ACTIVA, "2020-05-04"),
+    (5002, 1002, 2, VIGENCIA_ACTIVA, "2021-07-15"),
+    (5003, 1003, None, VIGENCIA_ANULADA, "2022-01-20"),
+)
+
 
 def _crear_esquema(motor: Engine) -> None:
     """Crea las tablas mínimas de eventos, dimensiones y auditoría.
@@ -212,11 +252,40 @@ def _sembrar_datos(motor: Engine) -> None:
             ],
         )
         conexion.execute(
-            text("INSERT INTO dim_codigo (id_codigo, id_persona) VALUES (:id_codigo, :id_persona)"),
+            text("INSERT INTO dim_empresa (id_empresa, nombre_empresa) VALUES (:id, :nombre)"),
+            [{"id": id_empresa, "nombre": nombre} for id_empresa, nombre in _EMPRESAS],
+        )
+        conexion.execute(
+            text(
+                "INSERT INTO dim_detalle_comportamiento "
+                "(id_jerarquia, fuente, descripcion_comportamiento, id_comportamiento) "
+                "VALUES (:id, :fuente, :descripcion, :comportamiento)"
+            ),
             [
-                {"id_codigo": 5001, "id_persona": 1001},
-                {"id_codigo": 5002, "id_persona": 1002},
-                {"id_codigo": 5003, "id_persona": 1003},
+                {
+                    "id": id_jerarquia,
+                    "fuente": fuente,
+                    "descripcion": descripcion,
+                    "comportamiento": comportamiento,
+                }
+                for id_jerarquia, fuente, descripcion, comportamiento in _DETALLES_COMPORTAMIENTO
+            ],
+        )
+        conexion.execute(
+            text(
+                "INSERT INTO dim_codigo "
+                "(id_codigo, id_persona, id_empresa, id_vigencia, fecha_registro) "
+                "VALUES (:id_codigo, :id_persona, :id_empresa, :vigencia, :fecha_registro)"
+            ),
+            [
+                {
+                    "id_codigo": id_codigo,
+                    "id_persona": id_persona,
+                    "id_empresa": id_empresa,
+                    "vigencia": vigencia,
+                    "fecha_registro": fecha_registro,
+                }
+                for id_codigo, id_persona, id_empresa, vigencia, fecha_registro in _CODIGOS
             ],
         )
         conexion.execute(
@@ -492,9 +561,9 @@ def test_eliminar_lote_borra_todo_el_lote(
     assert _auditoria(motor_sqlite) == [(ACCION_ELIMINAR_LOTE, f"Lote:{_LOTE_TARDIO}")]
 
 
-# --- Catálogo de tablas (spec 015) ------------------------------------------
-def test_catalogo_tablas_expone_las_cuatro_tablas() -> None:
-    """CA-01: el catálogo declara las cuatro tablas en el orden de las sub-pestañas."""
+# --- Catálogo de tablas (specs 015 y 018) -----------------------------------
+def test_catalogo_tablas_expone_las_cinco_tablas() -> None:
+    """CA-01/CA-04: el catálogo declara las cinco tablas en el orden de las sub-pestañas."""
     # Arrange / Act
     claves = tuple(definicion.clave for definicion in TABLAS_CORRECCION)
     etiquetas = tuple(definicion.etiqueta for definicion in TABLAS_CORRECCION)
@@ -551,6 +620,40 @@ def test_listar_registros_operadores(repositorio: EventosRepository) -> None:
     assert registros[0].datos["Nombres"] == "Ana"
     assert registros[0].datos["Primer apellido"] == "Pérez"
     assert registros[2].estado == "Anulado"
+
+
+def test_listar_registros_codigos(repositorio: EventosRepository) -> None:
+    """CA-04: la tabla de códigos expone operador, empresa y fecha de vigencia."""
+    # Act
+    registros = repositorio.listar_registros("codigos")
+
+    # Assert
+    assert [registro.id_registro for registro in registros] == [5001, 5002, 5003]
+    assert registros[0].datos["Código"] == 5001
+    assert registros[0].datos["Cédula"] == 1001
+    assert registros[0].datos["Nombre"] == "Ana Pérez"
+    assert registros[0].datos["Empresa"] == "Metro Línea S.A."
+    assert registros[0].datos["Desde"] == "2020-05-04"
+    assert registros[1].datos["Empresa"] == "Blanco y Negro S.A."
+    assert registros[2].datos["Empresa"] is None
+
+
+def test_listar_fuentes_comportamiento(repositorio: EventosRepository) -> None:
+    """CA-03: el repositorio lista las fuentes oficiales del catálogo."""
+    # Act
+    fuentes = repositorio.listar_fuentes_comportamiento()
+
+    # Assert
+    assert fuentes == ["Operativo", "PQRS"]
+
+
+def test_listar_descripciones_comportamiento(repositorio: EventosRepository) -> None:
+    """CA-03: el repositorio lista las descripciones oficiales del catálogo."""
+    # Act
+    descripciones = repositorio.listar_descripciones_comportamiento()
+
+    # Assert
+    assert descripciones == ["Alta sin cinturón", "Exceso de velocidad"]
 
 
 def test_listar_registros_respeta_el_limite(repositorio: EventosRepository) -> None:
@@ -817,6 +920,103 @@ def test_actualizar_registros_seguros_genero_invalido_lanza(
         repositorio.actualizar_registros_seguros("operadores", [cambio], "admin")
 
 
+# --- Spec 018: listas oficiales de licencias y comportamientos --------------
+def test_actualizar_registros_seguros_licencia_valida_normaliza(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-02: una licencia oficial se normaliza a mayúsculas y se guarda."""
+    # Arrange
+    cambio = CambioRegistro(1, "Tipo", "c1")
+
+    # Act
+    afectados = repositorio.actualizar_registros_seguros("licencias", [cambio], "admin")
+
+    # Assert
+    assert afectados == 1
+    with motor_sqlite.connect() as conexion:
+        tipo = conexion.execute(
+            text("SELECT tipo FROM fact_licencias WHERE id_hecho_licencia = 1")
+        ).scalar_one()
+    assert str(tipo) == "C1"
+
+
+def test_actualizar_registros_seguros_licencia_invalida_lanza(
+    repositorio: EventosRepository,
+) -> None:
+    """CA-02: una licencia fuera de ``C1``/``C2``/``C3`` se rechaza."""
+    # Arrange
+    cambio = CambioRegistro(1, "Tipo", "C4")
+
+    # Act / Assert
+    with pytest.raises(ValorInvalidoError):
+        repositorio.actualizar_registros_seguros("licencias", [cambio], "admin")
+
+
+def test_actualizar_registros_seguros_fuente_valida(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-03: una fuente del catálogo se guarda en el comportamiento."""
+    # Arrange
+    cambio = CambioRegistro(1, "Fuente", "Operativo")
+
+    # Act
+    afectados = repositorio.actualizar_registros_seguros("comportamientos", [cambio], "admin")
+
+    # Assert
+    assert afectados == 1
+    with motor_sqlite.connect() as conexion:
+        fuente = conexion.execute(
+            text("SELECT fuente FROM fact_comportamiento WHERE id_hecho_comportamiento = 1")
+        ).scalar_one()
+    assert str(fuente) == "Operativo"
+
+
+def test_actualizar_registros_seguros_fuente_invalida_lanza(
+    repositorio: EventosRepository,
+) -> None:
+    """CA-03: una fuente fuera del catálogo se rechaza."""
+    # Arrange
+    cambio = CambioRegistro(1, "Fuente", "Fuente inexistente")
+
+    # Act / Assert
+    with pytest.raises(ValorInvalidoError):
+        repositorio.actualizar_registros_seguros("comportamientos", [cambio], "admin")
+
+
+def test_actualizar_registros_seguros_descripcion_valida(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-03: una descripción del catálogo se guarda en el comportamiento."""
+    # Arrange
+    cambio = CambioRegistro(1, "Descripción", "Alta sin cinturón")
+
+    # Act
+    afectados = repositorio.actualizar_registros_seguros("comportamientos", [cambio], "admin")
+
+    # Assert
+    assert afectados == 1
+    with motor_sqlite.connect() as conexion:
+        descripcion = conexion.execute(
+            text(
+                "SELECT descripcion_comportamiento FROM fact_comportamiento "
+                "WHERE id_hecho_comportamiento = 1"
+            )
+        ).scalar_one()
+    assert str(descripcion) == "Alta sin cinturón"
+
+
+def test_actualizar_registros_seguros_descripcion_invalida_lanza(
+    repositorio: EventosRepository,
+) -> None:
+    """CA-03: una descripción fuera del catálogo se rechaza."""
+    # Arrange
+    cambio = CambioRegistro(1, "Descripción", "Descripción inexistente")
+
+    # Act / Assert
+    with pytest.raises(ValorInvalidoError):
+        repositorio.actualizar_registros_seguros("comportamientos", [cambio], "admin")
+
+
 def test_actualizar_registros_seguros_sin_cambios_no_audita(
     repositorio: EventosRepository, motor_sqlite: Engine
 ) -> None:
@@ -958,6 +1158,83 @@ def test_puede_eliminar_solo_super_admin() -> None:
     assert ui.puede_eliminar(ROL_ADMINISTRADOR) is False
 
 
+# --- UI (spec 018): búsqueda rápida y listas oficiales ----------------------
+def test_filtrar_filas_por_termino_insensible_a_mayusculas() -> None:
+    """CA-01: la búsqueda rápida filtra por cualquier celda y sin distinguir mayúsculas."""
+    # Arrange
+    filas: list[dict[str, object]] = [
+        {"ID": 1, "Código": 5001, "Nombre": "Ana", ETIQUETA_ESTADO: OPCION_VIGENTE},
+        {"ID": 2, "Código": 5002, "Nombre": "Luis", ETIQUETA_ESTADO: OPCION_ANULADO},
+    ]
+
+    # Act / Assert
+    assert ui.filtrar_filas(filas, "ana") == [filas[0]]
+    assert ui.filtrar_filas(filas, "5002") == [filas[1]]
+    assert ui.filtrar_filas(filas, "").__len__() == 2
+    assert ui.filtrar_filas(filas, "zzz") == []
+
+
+def test_filas_con_seleccion_anexa_casilla_desmarcada() -> None:
+    """CA-05: cada fila del editor incorpora la casilla ``Seleccionar`` en falso."""
+    # Arrange
+    filas: list[dict[str, object]] = [{"ID": 7, "Código": 5001}]
+
+    # Act
+    resultado = ui.filas_con_seleccion(filas)
+
+    # Assert
+    assert resultado == [{"Seleccionar": False, "ID": 7, "Código": 5001}]
+
+
+def test_ids_seleccionados_toma_solo_las_filas_marcadas() -> None:
+    """CA-05: solo las filas con la casilla marcada e ID válido se devuelven."""
+    # Arrange
+    filas: list[dict[str, object]] = [
+        {"Seleccionar": True, "ID": 1},
+        {"Seleccionar": False, "ID": 2},
+        {"Seleccionar": True, "ID": 3},
+        {"Seleccionar": True, "ID": None},
+    ]
+
+    # Act / Assert
+    assert ui.ids_seleccionados(filas) == [1, 3]
+
+
+def test_configuracion_columnas_licencias_usa_opciones_oficiales() -> None:
+    """CA-02: la columna ``Tipo`` de licencias es un desplegable ``C1``/``C2``/``C3``."""
+    # Arrange / Act
+    config = ui.configuracion_columnas(_definicion("licencias"), [])
+
+    # Assert
+    assert config["Tipo"]["type_config"]["type"] == "selectbox"
+    assert list(config["Tipo"]["type_config"]["options"]) == list(OPCIONES_LICENCIA)
+
+
+def test_configuracion_columnas_comportamientos_usa_catalogos() -> None:
+    """CA-03: ``Fuente`` y ``Descripción`` son desplegables con las opciones recibidas."""
+    # Arrange / Act
+    config = ui.configuracion_columnas(
+        _definicion("comportamientos"),
+        [],
+        ["Operativo", "PQRS"],
+        ["Alta sin cinturón"],
+    )
+
+    # Assert
+    assert list(config["Fuente"]["type_config"]["options"]) == ["Operativo", "PQRS"]
+    assert list(config["Descripción"]["type_config"]["options"]) == ["Alta sin cinturón"]
+
+
+def test_configuracion_columnas_incluye_la_casilla_de_seleccion() -> None:
+    """CA-05: el editor ofrece la casilla ``Seleccionar`` para las acciones en bloque."""
+    # Arrange / Act
+    config = ui.configuracion_columnas(_definicion("codigos"), [])
+
+    # Assert
+    assert ui.ETIQUETA_SELECCION in config
+    assert config[ui.ETIQUETA_SELECCION]["type_config"]["type"] == "checkbox"
+
+
 # --- Criterios de aceptación verificables ------------------------------------
 def test_paquete_correccion_registros_existe() -> None:
     """CA-01: el paquete expone ``render_correccion_registros``."""
@@ -1003,19 +1280,35 @@ def test_ui_usa_editor_tipo_excel_con_columnas_protegidas() -> None:
     # Act / Assert
     assert "st.data_editor(" in contenido
     assert "st.column_config.SelectboxColumn(" in contenido
+    assert "st.column_config.CheckboxColumn(" in contenido
     assert "disabled=" in contenido
-    assert 'num_rows="delete"' in contenido
-    assert "use_container_width=True" in contenido
+    assert 'num_rows="dynamic"' in contenido
+    assert 'width="stretch"' in contenido
 
 
-def test_ui_no_renderiza_filtros_externos_masivos() -> None:
-    """CA-02: la UI no levanta formularios de filtros por fuera de la tabla."""
+def test_ui_expone_buscador_rapido_por_tabla() -> None:
+    """CA-01: cada tabla incluye la barra de búsqueda rápida ``🔍 Filtrar tabla``."""
     # Arrange
     contenido = _RUTA_UI.read_text(encoding="utf-8")
 
     # Act / Assert
-    for widget in ("st.text_input", "st.selectbox", "st.date_input", "st.multiselect"):
-        assert widget not in contenido
+    assert "st.text_input(" in contenido
+    assert ui.ETIQUETA_FILTRO in contenido
+    assert ui.PLACEHOLDER_FILTRO in contenido
+    assert "filtrar_filas(" in contenido
+
+
+def test_ui_expone_botones_de_accion_en_bloque() -> None:
+    """CA-05: la UI ofrece los botones de acción en bloque y delega en el repositorio."""
+    # Arrange
+    contenido = _RUTA_UI.read_text(encoding="utf-8")
+
+    # Act / Assert
+    assert ui.ETIQUETA_VIGENTE_BLOQUE in contenido
+    assert ui.ETIQUETA_ANULADO_BLOQUE in contenido
+    assert ui.ETIQUETA_ELIMINAR_BLOQUE in contenido
+    assert "mutar_vigencia(" in contenido
+    assert "ids_seleccionados(" in contenido
 
 
 def test_ui_expone_el_boton_de_guardado_y_delega_en_el_repositorio() -> None:

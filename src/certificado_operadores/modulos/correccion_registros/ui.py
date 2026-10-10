@@ -1,11 +1,14 @@
-"""Interfaz Streamlit del módulo de corrección de registros (specs 015 y 017).
+"""Interfaz Streamlit del módulo de corrección de registros (specs 015, 017 y 018).
 
 Capa de presentación pura: organiza la corrección en sub-pestañas por tabla del
-sistema (Eventos, Licencias, Comportamientos y Operadores) y ofrece un **editor
-tipo hoja de cálculo** (``st.data_editor``) con listas desplegables en las
+sistema (Eventos, Licencias, Comportamientos, Operadores y Códigos) y ofrece un
+**editor tipo hoja de cálculo** (``st.data_editor``) con listas desplegables en las
 columnas permitidas, columnas protegidas de solo lectura y un botón explícito
-**Guardar Cambios**. Toda consulta, validación y mutación se delega en
-:class:`~certificado_operadores.infra.eventos_repository.EventosRepository`, que
+**Guardar Cambios**. La spec 018 añade una barra de **búsqueda rápida** por
+sub-pestaña, listas oficiales de licencias y comportamientos, la tabla de
+**Códigos** y los botones de **acción en bloque** (marcar vigente/anulado y
+eliminar las filas seleccionadas). Toda consulta, validación y mutación se delega
+en :class:`~certificado_operadores.infra.eventos_repository.EventosRepository`, que
 aplica integridad referencial y transacciones atómicas con auditoría.
 
 La UI no contiene sentencias SQL (RNF-01), no conoce el esquema (RNF-02) ni
@@ -35,6 +38,7 @@ if str(_RUTA_SRC) not in sys.path:
 
 from certificado_operadores.domain.models import (  # noqa: E402
     VIGENCIA_ACTIVA,
+    VIGENCIA_ANULADA,
 )
 from certificado_operadores.domain.usuarios import ROL_SUPER_ADMINISTRADOR  # noqa: E402
 from certificado_operadores.infra.eventos_repository import (  # noqa: E402
@@ -43,11 +47,15 @@ from certificado_operadores.infra.eventos_repository import (  # noqa: E402
     OPCION_ANULADO,
     OPCION_VIGENTE,
     OPCIONES_ESTADO,
+    OPCIONES_LICENCIA,
     TABLAS_CORRECCION,
     TIPO_EDICION_CODIGO,
+    TIPO_EDICION_DESCRIPCION,
     TIPO_EDICION_ENTERO,
     TIPO_EDICION_EVENTO,
+    TIPO_EDICION_FUENTE,
     TIPO_EDICION_GENERO,
+    TIPO_EDICION_LICENCIA,
     CambioRegistro,
     CodigoInexistenteError,
     ColumnaEditable,
@@ -71,6 +79,12 @@ PREFIJO_CLAVE_BOTON = "corr_guardar_"
 PREFIJO_CLAVE_MENSAJE = "corr_mensaje_"
 """Prefijo de la clave de sesión del mensaje de resultado de cada tabla."""
 
+PREFIJO_CLAVE_FILTRO = "filtro_"
+"""Prefijo de la clave de sesión de la barra de búsqueda rápida (spec 018)."""
+
+PREFIJO_CLAVE_BLOQUE = "corr_bloque_"
+"""Prefijo de la clave de sesión de los botones de acción en bloque (spec 018)."""
+
 CLAVE_TIPO_MENSAJE = "corr_tipo_"
 """Prefijo de la clave de sesión del tipo de mensaje (éxito/error/aviso)."""
 
@@ -82,6 +96,30 @@ ERROR_ELIMINAR_SIN_PERMISO = "🔒 Eliminar registros requiere el rol Super Admi
 
 MENSAJE_SIN_CAMBIOS = "No hay cambios por guardar."
 """Aviso mostrado cuando el editor no registra diferencias."""
+
+ETIQUETA_FILTRO = "🔍 Filtrar tabla:"
+"""Etiqueta de la barra de búsqueda rápida de cada tabla (spec 018)."""
+
+PLACEHOLDER_FILTRO = "Buscar por código, cédula, nombre, evento, fecha o estado..."
+"""Texto guía de la barra de búsqueda rápida por sub-pestaña (spec 018)."""
+
+ETIQUETA_SELECCION = "Seleccionar"
+"""Encabezado de la casilla de selección múltiple de filas (spec 018)."""
+
+ETIQUETA_VIGENTE_BLOQUE = "Marcar Vigente (Seleccionados)"
+"""Texto del botón que marca como vigentes las filas seleccionadas (spec 018)."""
+
+ETIQUETA_ANULADO_BLOQUE = "Marcar Anulado (Seleccionados)"
+"""Texto del botón que marca como anuladas las filas seleccionadas (spec 018)."""
+
+ETIQUETA_ELIMINAR_BLOQUE = "Eliminar (Seleccionados)"
+"""Texto del botón que elimina las filas seleccionadas (spec 018)."""
+
+MENSAJE_SIN_SELECCION = "Seleccione al menos una fila para la acción en bloque."
+"""Aviso mostrado cuando no hay filas marcadas para una acción en bloque (spec 018)."""
+
+MENSAJE_SIN_COINCIDENCIAS = "Ningún registro coincide con el filtro."
+"""Aviso mostrado cuando la búsqueda rápida no encuentra coincidencias (spec 018)."""
 
 
 def _como_entero(valor: object) -> int:
@@ -126,6 +164,67 @@ def filas_editor(
     ]
 
 
+def filtrar_filas(filas: list[dict[str, object]], termino: str) -> list[dict[str, object]]:
+    """Filtra en memoria las filas del editor por un término de búsqueda (spec 018).
+
+    La comparación es insensible a mayúsculas y busca el término como subcadena
+    en cualquiera de las celdas de la fila. Un término vacío devuelve todas las
+    filas.
+
+    Args:
+        filas: Filas del editor (diccionarios ``etiqueta -> valor``).
+        termino: Texto introducido en la barra de búsqueda rápida.
+
+    Returns:
+        Las filas que contienen el término en alguna de sus celdas.
+    """
+    limpio = termino.strip().lower()
+    if not limpio:
+        return list(filas)
+    return [
+        fila
+        for fila in filas
+        if any(limpio in str(valor).lower() for valor in fila.values() if valor is not None)
+    ]
+
+
+def filas_con_seleccion(filas: list[dict[str, object]]) -> list[dict[str, object]]:
+    """Añade la casilla ``Seleccionar`` (sin marcar) a las filas del editor (spec 018).
+
+    Args:
+        filas: Filas del editor sin la columna de selección.
+
+    Returns:
+        Nuevas filas con ``Seleccionar`` en primer lugar y valor ``False``.
+    """
+    return [{ETIQUETA_SELECCION: False, **fila} for fila in filas]
+
+
+def ids_seleccionados(filas: list[dict[str, object]]) -> list[int]:
+    """Extrae los IDs de las filas cuya casilla ``Seleccionar`` está marcada (spec 018).
+
+    Se descartan las filas añadidas por el usuario (sin ``ID``) y los valores no
+    convertibles a entero.
+
+    Args:
+        filas: Filas devueltas por el editor, con la casilla de selección.
+
+    Returns:
+        Los identificadores de las filas seleccionadas, en el orden recibido.
+    """
+    seleccionados: list[int] = []
+    for fila in filas:
+        if not fila.get(ETIQUETA_SELECCION):
+            continue
+        if fila.get("ID") in (None, ""):
+            continue
+        try:
+            seleccionados.append(_como_entero(fila["ID"]))
+        except (TypeError, ValueError):
+            continue
+    return seleccionados
+
+
 def opciones_evento(nombres_evento: list[str]) -> list[str]:
     """Construye las opciones de la lista desplegable de tipo de evento.
 
@@ -161,43 +260,75 @@ def columnas_protegidas(definicion: DefinicionTabla) -> list[str]:
     ]
 
 
-def _config_editable(columna: ColumnaEditable, opciones_evento: list[str]) -> Any:
-    """Construye la configuración de una columna editable del editor."""
+def _config_editable(
+    columna: ColumnaEditable,
+    opciones_evento: list[str],
+    opciones_fuente: list[str],
+    opciones_descripcion: list[str],
+) -> Any:
+    """Construye la configuración de una columna editable del editor.
+
+    Args:
+        columna: Metadatos de la columna editable.
+        opciones_evento: Nombres de los tipos de evento del catálogo.
+        opciones_fuente: Fuentes oficiales de ``dim_detalle_comportamiento``.
+        opciones_descripcion: Descripciones oficiales del catálogo.
+
+    Returns:
+        La configuración de la columna para ``st.data_editor``.
+    """
     if columna.tipo == TIPO_EDICION_EVENTO:
         return st.column_config.SelectboxColumn(columna.etiqueta, options=opciones_evento)
     if columna.tipo == TIPO_EDICION_GENERO:
         return st.column_config.SelectboxColumn(columna.etiqueta, options=list(GENEROS_VALIDOS))
+    if columna.tipo == TIPO_EDICION_LICENCIA:
+        return st.column_config.SelectboxColumn(columna.etiqueta, options=list(OPCIONES_LICENCIA))
+    if columna.tipo == TIPO_EDICION_FUENTE:
+        return st.column_config.SelectboxColumn(columna.etiqueta, options=opciones_fuente)
+    if columna.tipo == TIPO_EDICION_DESCRIPCION:
+        return st.column_config.SelectboxColumn(columna.etiqueta, options=opciones_descripcion)
     if columna.tipo in (TIPO_EDICION_CODIGO, TIPO_EDICION_ENTERO):
         return st.column_config.NumberColumn(columna.etiqueta, step=1)
     return st.column_config.TextColumn(columna.etiqueta)
 
 
 def configuracion_columnas(
-    definicion: DefinicionTabla, opciones_evento: list[str]
+    definicion: DefinicionTabla,
+    opciones_evento: list[str],
+    opciones_fuente: list[str] | None = None,
+    opciones_descripcion: list[str] | None = None,
 ) -> dict[str, Any]:
-    """Construye el ``column_config`` del editor tipo Excel (spec 017, S-04).
+    """Construye el ``column_config`` del editor tipo Excel (specs 017 y 018).
 
     Configura ``SelectboxColumn`` para el estado (``vigente``/``anulado``), el
-    tipo de evento y el género; columnas numéricas para códigos y cédula; y
-    columnas de texto para el resto. Las columnas protegidas se marcan como
+    tipo de evento, el género, la licencia (``C1``/``C2``/``C3``), la fuente y la
+    descripción de comportamiento; además añade la casilla ``Seleccionar`` para
+    las acciones en bloque (spec 018). Las columnas protegidas se marcan como
     deshabilitadas.
 
     Args:
         definicion: Metadatos de la tabla.
         opciones_evento: Nombres de los tipos de evento para la lista desplegable.
+        opciones_fuente: Fuentes oficiales para la lista desplegable; si es
+            ``None`` se usa una lista vacía.
+        opciones_descripcion: Descripciones oficiales para la lista desplegable; si
+            es ``None`` se usa una lista vacía.
 
     Returns:
         El mapa ``etiqueta -> column_config`` para ``st.data_editor``.
     """
+    fuentes = opciones_fuente or []
+    descripciones = opciones_descripcion or []
     editables = _editable_por_etiqueta(definicion)
     protegidas = set(columnas_protegidas(definicion))
     config: dict[str, Any] = {
         "ID": st.column_config.NumberColumn("ID", disabled=True),
+        ETIQUETA_SELECCION: st.column_config.CheckboxColumn(ETIQUETA_SELECCION),
     }
     for columna in definicion.columnas:
         if columna.etiqueta in editables:
             config[columna.etiqueta] = _config_editable(
-                editables[columna.etiqueta], opciones_evento
+                editables[columna.etiqueta], opciones_evento, fuentes, descripciones
             )
         elif columna.etiqueta in protegidas:
             config[columna.etiqueta] = st.column_config.TextColumn(columna.etiqueta, disabled=True)
@@ -371,14 +502,59 @@ def _procesar_guardado(
     st.rerun()
 
 
+def _procesar_bloque(
+    repositorio: EventosRepository,
+    definicion: DefinicionTabla,
+    ids: list[int],
+    vigencia: int | None,
+    rol: str,
+    usuario: str,
+) -> None:
+    """Aplica una acción en bloque a las filas seleccionadas (spec 018).
+
+    Marca la vigencia destino de todos los IDs o, cuando ``vigencia`` es ``None``,
+    los elimina físicamente (solo Super Administrador y sin hijos dependientes).
+
+    Args:
+        repositorio: Repositorio de tablas inyectado.
+        definicion: Metadatos de la tabla en curso.
+        ids: Identificadores de las filas seleccionadas.
+        vigencia: Vigencia destino; ``None`` solicita la eliminación física.
+        rol: Rol del usuario (controla la eliminación).
+        usuario: Usuario de la sesión (para auditoría).
+    """
+    if not ids:
+        _guardar_mensaje(definicion, "info", MENSAJE_SIN_SELECCION)
+        st.rerun()
+    if vigencia is None:
+        if not puede_eliminar(rol):
+            _guardar_mensaje(definicion, "error", ERROR_ELIMINAR_SIN_PERMISO)
+            st.rerun()
+        try:
+            borrados = repositorio.eliminar_registros_tabla(definicion.clave, ids, usuario)
+            _guardar_mensaje(definicion, "success", f"🗑️ {borrados} registro(s) eliminado(s).")
+        except DependenciaRegistroError as error:
+            _guardar_mensaje(definicion, "error", f"⛔ {error}")
+        st.rerun()
+    try:
+        afectados = repositorio.mutar_vigencia(definicion.clave, ids, vigencia, usuario)
+        estado = "vigente(s)" if vigencia == VIGENCIA_ACTIVA else "anulado(s)"
+        _guardar_mensaje(definicion, "success", f"✅ {afectados} registro(s) marcado(s) {estado}.")
+    except (DependenciaRegistroError, ValorInvalidoError) as error:
+        _guardar_mensaje(definicion, "error", f"⛔ {error}")
+    st.rerun()
+
+
 def _render_encabezado() -> None:
     """Pinta la ayuda del módulo."""
     st.markdown(
-        "Edita como en una hoja de cálculo: las celdas con lista desplegable solo "
-        "aceptan valores del catálogo, las llaves primarias y fechas de auditoría "
-        "son de solo lectura y al final debes pulsar **Guardar Cambios**. La "
-        "eliminación se bloquea si el registro tiene eventos o comportamientos "
-        "dependientes."
+        "Busca con la barra **🔍 Filtrar tabla** y edita como en una hoja de "
+        "cálculo: las celdas con lista desplegable solo aceptan valores del "
+        "catálogo, las llaves primarias y fechas de auditoría son de solo lectura y "
+        "al final debes pulsar **Guardar Cambios**. Para las acciones en bloque, "
+        "marca la casilla **Seleccionar** de una o varias filas y usa los botones "
+        "**Marcar Vigente**, **Marcar Anulado** o **Eliminar**. La eliminación se "
+        "bloquea si el registro tiene eventos o comportamientos dependientes."
     )
 
 
@@ -388,8 +564,10 @@ def _render_tabla(
     rol: str,
     usuario: str,
     opciones_tipo_evento: list[str],
+    opciones_fuente: list[str],
+    opciones_descripcion: list[str],
 ) -> None:
-    """Renderiza una sub-pestaña: el editor tipo Excel y su botón de guardado.
+    """Renderiza una sub-pestaña: búsqueda, editor Excel y acciones en bloque.
 
     Args:
         repositorio: Repositorio de tablas inyectado desde el punto de entrada.
@@ -397,6 +575,8 @@ def _render_tabla(
         rol: Rol del usuario de la sesión (controla la eliminación).
         usuario: Usuario de la sesión (para auditoría).
         opciones_tipo_evento: Nombres de tipos de evento para la lista desplegable.
+        opciones_fuente: Fuentes oficiales para la lista desplegable.
+        opciones_descripcion: Descripciones oficiales para la lista desplegable.
     """
     _render_mensaje(definicion)
     registros = repositorio.listar_registros(definicion.clave)
@@ -404,16 +584,52 @@ def _render_tabla(
         st.info(f"No hay registros en {definicion.etiqueta.lower()}.")
         return
 
-    original = filas_editor(definicion, registros)
+    termino = st.text_input(
+        ETIQUETA_FILTRO,
+        placeholder=PLACEHOLDER_FILTRO,
+        key=f"{PREFIJO_CLAVE_FILTRO}{definicion.clave}",
+    )
+    filas = filtrar_filas(filas_editor(definicion, registros), termino)
+    if not filas:
+        st.warning(MENSAJE_SIN_COINCIDENCIAS)
+        return
+
+    original = filas_con_seleccion(filas)
     editor = st.data_editor(
         original,
         key=f"{PREFIJO_CLAVE_TABLA}{definicion.clave}",
         hide_index=True,
-        use_container_width=True,
-        num_rows="delete",
-        column_config=configuracion_columnas(definicion, opciones_tipo_evento),
+        width="stretch",
+        num_rows="dynamic",
+        column_config=configuracion_columnas(
+            definicion, opciones_tipo_evento, opciones_fuente, opciones_descripcion
+        ),
         disabled=columnas_protegidas(definicion),
     )
+    seleccionados = ids_seleccionados(_como_filas(editor))
+
+    col_vigente, col_anulado, col_eliminar = st.columns(3)
+    with col_vigente:
+        if st.button(
+            ETIQUETA_VIGENTE_BLOQUE,
+            key=f"{PREFIJO_CLAVE_BLOQUE}vig_{definicion.clave}",
+        ):
+            _procesar_bloque(repositorio, definicion, seleccionados, VIGENCIA_ACTIVA, rol, usuario)
+    with col_anulado:
+        if st.button(
+            ETIQUETA_ANULADO_BLOQUE,
+            key=f"{PREFIJO_CLAVE_BLOQUE}anu_{definicion.clave}",
+        ):
+            _procesar_bloque(repositorio, definicion, seleccionados, VIGENCIA_ANULADA, rol, usuario)
+    with col_eliminar:
+        if st.button(
+            ETIQUETA_ELIMINAR_BLOQUE,
+            key=f"{PREFIJO_CLAVE_BLOQUE}eli_{definicion.clave}",
+            disabled=not puede_eliminar(rol),
+        ):
+            _procesar_bloque(repositorio, definicion, seleccionados, None, rol, usuario)
+
+    st.divider()
     if st.button(
         ETIQUETA_GUARDAR,
         key=f"{PREFIJO_CLAVE_BOTON}{definicion.clave}",
@@ -436,21 +652,40 @@ def render_correccion_registros(repositorio: EventosRepository | None = None) ->
     opciones_tipo_evento = opciones_evento(
         [tipo.nombre_evento for tipo in repositorio.listar_tipos_evento()]
     )
+    opciones_fuente = repositorio.listar_fuentes_comportamiento()
+    opciones_descripcion = repositorio.listar_descripciones_comportamiento()
 
     _render_encabezado()
     pestanas = st.tabs([definicion.etiqueta for definicion in TABLAS_CORRECCION])
     for pestana, definicion in zip(pestanas, TABLAS_CORRECCION, strict=True):
         with pestana:
-            _render_tabla(repositorio, definicion, rol, usuario, opciones_tipo_evento)
+            _render_tabla(
+                repositorio,
+                definicion,
+                rol,
+                usuario,
+                opciones_tipo_evento,
+                opciones_fuente,
+                opciones_descripcion,
+            )
 
 
 __all__ = [
+    "ETIQUETA_ANULADO_BLOQUE",
+    "ETIQUETA_ELIMINAR_BLOQUE",
+    "ETIQUETA_FILTRO",
     "ETIQUETA_GUARDAR",
+    "ETIQUETA_SELECCION",
+    "ETIQUETA_VIGENTE_BLOQUE",
+    "PLACEHOLDER_FILTRO",
     "columnas_protegidas",
     "configuracion_columnas",
     "detectar_cambios",
+    "filas_con_seleccion",
     "filas_editor",
+    "filtrar_filas",
     "ids_eliminados",
+    "ids_seleccionados",
     "opciones_evento",
     "puede_eliminar",
     "render_correccion_registros",

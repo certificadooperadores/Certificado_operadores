@@ -88,6 +88,9 @@ OPCIONES_ESTADO: tuple[str, ...] = (OPCION_VIGENTE, OPCION_ANULADO)
 GENEROS_VALIDOS: tuple[str, ...] = ("M", "F")
 """Géneros permitidos en la columna ``Género`` (spec 017, S-04)."""
 
+OPCIONES_LICENCIA: tuple[str, ...] = ("C1", "C2", "C3")
+"""Categorías oficiales de conducción colombianas de la columna ``Tipo`` (spec 018)."""
+
 TIPO_EDICION_TEXTO = "texto"
 """Tipo de dato editable: texto libre."""
 
@@ -108,6 +111,15 @@ TIPO_EDICION_EVENTO = "evento"
 
 TIPO_EDICION_GENERO = "genero"
 """Tipo de dato editable restringido a ``M``/``F`` (spec 017, S-04)."""
+
+TIPO_EDICION_LICENCIA = "licencia"
+"""Tipo de dato editable restringido a las licencias oficiales ``C1``/``C2``/``C3`` (spec 018)."""
+
+TIPO_EDICION_FUENTE = "fuente"
+"""Tipo de dato editable restringido a las fuentes de ``dim_detalle_comportamiento`` (spec 018)."""
+
+TIPO_EDICION_DESCRIPCION = "descripcion"
+"""Tipo editable restringido a las descripciones del catálogo (spec 018)."""
 
 MENSAJE_DEPENDENCIAS = (
     "No se puede eliminar: el registro tiene {eventos} eventos y "
@@ -378,7 +390,7 @@ TABLAS_CORRECCION: tuple[DefinicionTabla, ...] = (
         orden="l.id_hecho_licencia DESC",
         editables=(
             ColumnaEditable("Código", "id_codigo", TIPO_EDICION_CODIGO),
-            ColumnaEditable("Tipo", "tipo", TIPO_EDICION_TEXTO),
+            ColumnaEditable("Tipo", "tipo", TIPO_EDICION_LICENCIA),
             ColumnaEditable("Vencimiento", "vencimiento", TIPO_EDICION_FECHA),
         ),
     ),
@@ -405,8 +417,8 @@ TABLAS_CORRECCION: tuple[DefinicionTabla, ...] = (
         orden="fc.fecha_registro DESC",
         editables=(
             ColumnaEditable("Código", "id_codigo", TIPO_EDICION_CODIGO),
-            ColumnaEditable("Fuente", "fuente", TIPO_EDICION_TEXTO),
-            ColumnaEditable("Descripción", "descripcion_comportamiento", TIPO_EDICION_TEXTO),
+            ColumnaEditable("Fuente", "fuente", TIPO_EDICION_FUENTE),
+            ColumnaEditable("Descripción", "descripcion_comportamiento", TIPO_EDICION_DESCRIPCION),
             ColumnaEditable("Fecha evento", "fecha_evento", TIPO_EDICION_FECHA),
         ),
     ),
@@ -432,6 +444,29 @@ TABLAS_CORRECCION: tuple[DefinicionTabla, ...] = (
             ColumnaEditable("Segundo apellido", "segundo_apellido", TIPO_EDICION_TEXTO),
             ColumnaEditable("Género", "genero", TIPO_EDICION_GENERO),
         ),
+        protege_dependencias=True,
+    ),
+    DefinicionTabla(
+        clave="codigos",
+        etiqueta="Códigos",
+        tabla="dim_codigo",
+        alias="c",
+        columna_id="id_codigo",
+        columna_vigencia="c.id_vigencia",
+        columnas=(
+            ColumnaTabla("Código", "c.id_codigo"),
+            ColumnaTabla("Cédula", "p.id_persona"),
+            ColumnaTabla("Nombre", _NOMBRE_OPERADOR),
+            ColumnaTabla("Empresa", "e.nombre_empresa"),
+            ColumnaTabla("Desde", "c.fecha_registro"),
+        ),
+        desde=(
+            "FROM dim_codigo AS c "
+            "JOIN dim_persona AS p ON c.id_persona = p.id_persona "
+            "LEFT JOIN dim_empresa AS e ON c.id_empresa = e.id_empresa"
+        ),
+        orden="c.id_codigo",
+        editables=(),
         protege_dependencias=True,
     ),
 )
@@ -490,6 +525,25 @@ _SQL_AUDITORIA = text(
 _SQL_CODIGOS_DE_PERSONA = text("SELECT id_codigo FROM dim_codigo WHERE id_persona = :id_persona")
 
 _SQL_CODIGO_EXISTE = text("SELECT 1 FROM dim_codigo WHERE id_codigo = :id_codigo LIMIT 1")
+
+# --- Spec 018: catálogos oficiales de las listas desplegables ----------------
+_SQL_FUENTES_COMPORTAMIENTO = text(
+    "SELECT DISTINCT fuente FROM dim_detalle_comportamiento "
+    "WHERE fuente IS NOT NULL AND TRIM(fuente) <> '' ORDER BY fuente"
+)
+
+_SQL_DESCRIPCIONES_COMPORTAMIENTO = text(
+    "SELECT DISTINCT descripcion_comportamiento FROM dim_detalle_comportamiento "
+    "WHERE descripcion_comportamiento IS NOT NULL "
+    "AND TRIM(descripcion_comportamiento) <> '' "
+    "ORDER BY descripcion_comportamiento"
+)
+
+_SQL_FUENTE_EXISTE = text("SELECT 1 FROM dim_detalle_comportamiento WHERE fuente = :valor LIMIT 1")
+
+_SQL_DESCRIPCION_EXISTE = text(
+    "SELECT 1 FROM dim_detalle_comportamiento WHERE descripcion_comportamiento = :valor LIMIT 1"
+)
 
 _SQL_TIPO_EVENTO_POR_NOMBRE = text(
     "SELECT id_tipo_evento FROM dim_tipo_evento WHERE nombre_evento = :nombre LIMIT 1"
@@ -770,6 +824,33 @@ class EventosRepository:
             )
             for fila in filas
         ]
+
+    def listar_fuentes_comportamiento(self) -> list[str]:
+        """Lista las fuentes oficiales de comportamiento (spec 018).
+
+        Lee las fuentes distintas del catálogo ``dim_detalle_comportamiento``
+        para alimentar la lista desplegable de la columna ``Fuente``.
+
+        Returns:
+            Las fuentes distintas, ordenadas alfabéticamente y sin vacíos.
+        """
+        with self.motor.connect() as conexion:
+            filas = conexion.execute(_SQL_FUENTES_COMPORTAMIENTO).all()
+        return [str(fila[0]) for fila in filas]
+
+    def listar_descripciones_comportamiento(self) -> list[str]:
+        """Lista las descripciones oficiales de comportamiento (spec 018).
+
+        Lee las descripciones distintas del catálogo
+        ``dim_detalle_comportamiento`` para alimentar la lista desplegable de la
+        columna ``Descripción``.
+
+        Returns:
+            Las descripciones distintas, ordenadas alfabéticamente y sin vacíos.
+        """
+        with self.motor.connect() as conexion:
+            filas = conexion.execute(_SQL_DESCRIPCIONES_COMPORTAMIENTO).all()
+        return [str(fila[0]) for fila in filas]
 
     def buscar_eventos(self, filtro: FiltroEventos | None = None) -> list[EventoInfo]:
         """Busca eventos aplicando los filtros indicados.
@@ -1159,6 +1240,25 @@ class EventosRepository:
                     MENSAJE_VALOR_INVALIDO.format(valor=valor, etiqueta=columna.etiqueta)
                 )
             return genero
+        if columna.tipo == TIPO_EDICION_LICENCIA:
+            licencia = str(valor).strip().upper()
+            if licencia not in OPCIONES_LICENCIA:
+                raise ValorInvalidoError(
+                    MENSAJE_VALOR_INVALIDO.format(valor=valor, etiqueta=columna.etiqueta)
+                )
+            return licencia
+        if columna.tipo in (TIPO_EDICION_FUENTE, TIPO_EDICION_DESCRIPCION):
+            texto = "" if valor is None else str(valor)
+            sentencia = (
+                _SQL_FUENTE_EXISTE
+                if columna.tipo == TIPO_EDICION_FUENTE
+                else _SQL_DESCRIPCION_EXISTE
+            )
+            if conexion.execute(sentencia, {"valor": texto}).first() is None:
+                raise ValorInvalidoError(
+                    MENSAJE_VALOR_INVALIDO.format(valor=valor, etiqueta=columna.etiqueta)
+                )
+            return texto
         if columna.tipo == TIPO_EDICION_ENTERO:
             return _a_entero(valor)
         if valor is None:
@@ -1267,15 +1367,19 @@ __all__ = [
     "MENSAJE_DEPENDENCIAS",
     "MENSAJE_VALOR_INVALIDO",
     "OPCIONES_ESTADO",
+    "OPCIONES_LICENCIA",
     "OPCION_ANULADO",
     "OPCION_VIGENTE",
     "TABLAS_CORRECCION",
     "TABLA_PERSONA",
     "TIPO_EDICION_CODIGO",
+    "TIPO_EDICION_DESCRIPCION",
     "TIPO_EDICION_ENTERO",
     "TIPO_EDICION_EVENTO",
     "TIPO_EDICION_FECHA",
+    "TIPO_EDICION_FUENTE",
     "TIPO_EDICION_GENERO",
+    "TIPO_EDICION_LICENCIA",
     "TIPO_EDICION_TEXTO",
     "TIPO_EDICION_VIGENCIA",
     "CambioRegistro",

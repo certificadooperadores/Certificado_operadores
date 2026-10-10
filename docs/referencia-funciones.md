@@ -23,8 +23,8 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `gestion_usuarios` | `src/certificado_operadores/modulos/gestion_usuarios/ui.py` | Interfaz Streamlit de gestión de usuarios; consume el Facade y no contiene SQL. |
 | `infra.backup_service` | `src/certificado_operadores/infra/backup_service.py` | Servicio de copias de seguridad de SQLite; encapsula el sistema de archivos, la comparación y la restauración. |
 | `administrar_backups` | `src/certificado_operadores/modulos/administrar_backups/ui.py` | Interfaz Streamlit de backups; consume `BackupService` y no contiene SO ni SQL. |
-| `infra.eventos_repository` | `src/certificado_operadores/infra/eventos_repository.py` | Acceso a datos de `fact_eventos_operador`: filtros, lotes, mutaciones con auditoría e integridad referencial (specs 006, 015 y 017). |
-| `correccion_registros` | `src/certificado_operadores/modulos/correccion_registros/ui.py` | Interfaz Streamlit de corrección de registros con editor tipo Excel; consume `EventosRepository` y no contiene SQL. |
+| `infra.eventos_repository` | `src/certificado_operadores/infra/eventos_repository.py` | Acceso a datos de `fact_eventos_operador`: filtros, lotes, mutaciones con auditoría, integridad referencial y catálogos oficiales (specs 006, 015, 017 y 018). |
+| `correccion_registros` | `src/certificado_operadores/modulos/correccion_registros/ui.py` | Interfaz Streamlit de corrección de registros con editor tipo Excel, búsqueda rápida y acciones en bloque; consume `EventosRepository` y no contiene SQL. |
 | `infra.catalogos_repository` | `src/certificado_operadores/infra/catalogos_repository.py` | Acceso a datos de los cinco catálogos (empresas, vehículos, impactos, comportamientos y detalles) con auditoría (SQLAlchemy). |
 | `catalogos` | `src/certificado_operadores/modulos/catalogos/ui.py` | Interfaz Streamlit de catálogos; consume `CatalogosRepository` y no contiene SQL. |
 | `infra.certificados_repository` | `src/certificado_operadores/infra/certificados_repository.py` | Acceso a datos del registro de eventos y certificados: catálogos auxiliares, operador activo y registro con auditoría (SQLAlchemy). |
@@ -371,22 +371,26 @@ Punto de entrada: `src/certificado_operadores/pages/1_Configuracion.py` (importa
 
 ### Módulo `infra.eventos_repository` — `src/certificado_operadores/infra/eventos_repository.py`
 
-Repositorio de eventos de operadores (specs 006, 015 y 017). Encapsula todo el
-acceso a `fact_eventos_operador` y sus dimensiones: búsqueda con filtros, listado
-de tipos de evento, agrupamiento por lote (minuto de cargue) y mutaciones de
-reactivación, anulación y eliminación de registros o lotes. La spec 015 añade el
-**catálogo declarativo `TABLAS_CORRECCION`** (Eventos, Licencias, Comportamientos
-y Operadores) y un listado y mutación **genéricos por tabla**. La spec 017 añade
-la **integridad referencial** (conteo de dependencias y bloqueo de borrado),
-la **validación de códigos** y la **edición segura de celdas** tipo Excel con
-transacciones atómicas. Cada mutación registra su acción en `log_auditoria` dentro
-de la misma transacción.
+Repositorio de eventos de operadores (specs 006, 015, 017 y 018). Encapsula todo
+el acceso a `fact_eventos_operador` y sus dimensiones: búsqueda con filtros,
+listado de tipos de evento, agrupamiento por lote (minuto de cargue) y mutaciones
+de reactivación, anulación y eliminación de registros o lotes. La spec 015 añade
+el **catálogo declarativo `TABLAS_CORRECCION`** (Eventos, Licencias,
+Comportamientos, Operadores y Códigos) y un listado y mutación **genéricos por
+tabla**. La spec 017 añade la **integridad referencial** (conteo de dependencias y
+bloqueo de borrado), la **validación de códigos** y la **edición segura de celdas**
+tipo Excel con transacciones atómicas. La spec 018 añade los **catálogos oficiales
+de listas desplegables** (licencias `C1`/`C2`/`C3` y fuentes/descripciones de
+`dim_detalle_comportamiento`). Cada mutación registra su acción en `log_auditoria`
+dentro de la misma transacción.
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
 | `EventosRepository.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa el repositorio inyectando el motor. | — |
 | `EventosRepository.motor` | `propiedad -> Engine` | Motor SQLAlchemy (inyectado o resuelto de `db.get_engine`). | `Engine` |
 | `EventosRepository.listar_tipos_evento` | `() -> list[TipoEventoInfo]` | Lista los tipos de evento ordenados por id. | `list[TipoEventoInfo]` |
+| `EventosRepository.listar_fuentes_comportamiento` | `() -> list[str]` | Spec 018: fuentes distintas de `dim_detalle_comportamiento` para el desplegable `Fuente`. | `list[str]` |
+| `EventosRepository.listar_descripciones_comportamiento` | `() -> list[str]` | Spec 018: descripciones distintas del catálogo para el desplegable `Descripción`. | `list[str]` |
 | `EventosRepository.buscar_eventos` | `(filtro: FiltroEventos \| None = None) -> list[EventoInfo]` | RF-01: filtra por código, cédula, tipo, vigencia y rango de fechas. | `list[EventoInfo]` |
 | `EventosRepository.listar_lotes` | `() -> list[LoteInfo]` | RF-02: agrupa los eventos por minuto de cargue. | `list[LoteInfo]` |
 | `EventosRepository.listar_eventos_de_lote` | `(lote: str) -> list[EventoInfo]` | RF-02: detalle de los eventos de un lote. | `list[EventoInfo]` |
@@ -425,7 +429,8 @@ spec 015 `ColumnaTabla`, `DefinicionTabla` y `RegistroInfo`; la spec 017 añade
 `ColumnaProtegidaError` (S-03) y `ValorInvalidoError` (S-04). Constantes:
 `LIMITE_POR_DEFECTO`, `FORMATO_LOTE`, `ESTADO_VIGENTE_TEXTO`,
 `ESTADO_ANULADO_TEXTO`, `TABLA_PERSONA`, `ETIQUETA_ESTADO`, `OPCION_VIGENTE`,
-`OPCION_ANULADO`, `OPCIONES_ESTADO`, `GENEROS_VALIDOS`, los tipos de edición
+`OPCION_ANULADO`, `OPCIONES_ESTADO`, `GENEROS_VALIDOS`, `OPCIONES_LICENCIA`
+(`C1`/`C2`/`C3`, spec 018), los tipos de edición
 `TIPO_EDICION_*`, los mensajes `MENSAJE_*` (dependencias, código inexistente,
 columna protegida y valor inválido), `TABLAS_CORRECCION` y las acciones de
 auditoría `ACCION_*` (incluidas `ACCION_REACTIVAR_TABLA`, `ACCION_ANULAR_TABLA`,
@@ -433,39 +438,51 @@ auditoría `ACCION_*` (incluidas `ACCION_REACTIVAR_TABLA`, `ACCION_ANULAR_TABLA`
 
 ### Módulo `correccion_registros` — `src/certificado_operadores/modulos/correccion_registros/ui.py`
 
-Interfaz de Streamlit de corrección de registros (specs 015 y 017). Página
+Interfaz de Streamlit de corrección de registros (specs 015, 017 y 018). Página
 delgada: organiza la corrección en **sub-pestañas por tabla** (Eventos,
-Licencias, Comportamientos y Operadores), muestra en cada una un **editor tipo
-hoja de cálculo** (``st.data_editor``) con listas desplegables en las columnas
-permitidas, columnas protegidas de solo lectura y un botón explícito **Guardar
-Cambios**; delega toda lectura, validación y mutación en `EventosRepository`, que
-aplica integridad referencial y transacciones atómicas con auditoría. No contiene
-sentencias SQL (RNF-01) ni conoce el esquema (RNF-02).
+Licencias, Comportamientos, Operadores y Códigos), muestra en cada una un
+**editor tipo hoja de cálculo** (``st.data_editor``) con listas desplegables en
+las columnas permitidas, columnas protegidas de solo lectura y un botón explícito
+**Guardar Cambios**; delega toda lectura, validación y mutación en
+`EventosRepository`, que aplica integridad referencial y transacciones atómicas
+con auditoría. La spec 018 añade la **barra de búsqueda rápida** (``🔍 Filtrar
+tabla``), las listas oficiales de licencias y comportamientos, la tabla de
+**Códigos** y los **botones de acción en bloque** (``Marcar Vigente``, ``Marcar
+Anulado`` y ``Eliminar`` sobre las filas marcadas con la casilla ``Seleccionar``).
+No contiene sentencias SQL (RNF-01) ni conoce el esquema (RNF-02).
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
 | `filas_editor` | `(definicion: DefinicionTabla, registros: list[RegistroInfo]) -> list[dict[str, object]]` | Spec 017: mapea los DTOs a filas del editor con `Estado` restringido. | `list[dict]` |
 | `opciones_evento` | `(nombres_evento: list[str]) -> list[str]` | Spec 017: opciones de la lista de tipos de evento, sin duplicados. | `list[str]` |
 | `columnas_protegidas` | `(definicion: DefinicionTabla) -> list[str]` | Spec 017/S-03: encabezados de solo lectura (ID y columnas no editables). | `list[str]` |
-| `configuracion_columnas` | `(definicion: DefinicionTabla, opciones_evento: list[str]) -> dict[str, Any]` | Spec 017/S-04: `column_config` del editor (SelectboxColumn y columnas numéricas). | `dict` |
+| `configuracion_columnas` | `(definicion: DefinicionTabla, opciones_evento: list[str], opciones_fuente: list[str] \| None = None, opciones_descripcion: list[str] \| None = None) -> dict[str, Any]` | Specs 017/018: `column_config` del editor (SelectboxColumn, CheckboxColumn y columnas numéricas). | `dict` |
+| `filtrar_filas` | `(filas: list[dict[str, object]], termino: str) -> list[dict[str, object]]` | Spec 018: busca el término en cualquier celda (sin distinguir mayúsculas). | `list[dict]` |
+| `filas_con_seleccion` | `(filas: list[dict[str, object]]) -> list[dict[str, object]]` | Spec 018: añade la casilla `Seleccionar` (falsa) a cada fila. | `list[dict]` |
+| `ids_seleccionados` | `(filas: list[dict[str, object]]) -> list[int]` | Spec 018: extrae los IDs de las filas con la casilla marcada. | `list[int]` |
 | `detectar_cambios` | `(definicion, original, editado) -> list[CambioRegistro]` | Spec 017: compara filas y extrae las celdas editadas. | `list[CambioRegistro]` |
 | `ids_eliminados` | `(original, editado) -> list[int]` | Spec 017: detecta las filas removidas por el usuario. | `list[int]` |
 | `puede_eliminar` | `(rol: str) -> bool` | Indica si el rol puede eliminar (solo Super Admin). | `bool` |
 | `_como_entero` | `(valor: object) -> int` | Convierte la columna ID del editor a entero. | `int` |
 | `_editable_por_etiqueta` | `(definicion: DefinicionTabla) -> dict[str, ColumnaEditable]` | Indexa las columnas editables por etiqueta. | `dict` |
-| `_config_editable` | `(columna: ColumnaEditable, opciones_evento: list[str]) -> Any` | Configura una columna editable del editor. | config |
+| `_config_editable` | `(columna: ColumnaEditable, opciones_evento: list[str], opciones_fuente: list[str], opciones_descripcion: list[str]) -> Any` | Configura una columna editable del editor (incl. licencias y comportamientos). | config |
 | `_columnas_editables` | `(definicion: DefinicionTabla) -> list[str]` | Etiquetas editables, incluida la de estado. | `list[str]` |
 | `_como_filas` | `(editor: object) -> list[dict[str, object]]` | Normaliza la salida de `st.data_editor` a filas. | `list[dict]` |
 | `_render_mensaje` | `(definicion: DefinicionTabla) -> None` | Muestra y descarta el mensaje pendiente de la tabla. | — |
 | `_guardar_mensaje` | `(definicion, tipo, mensaje) -> None` | Registra el mensaje de resultado para el `rerun`. | — |
 | `_procesar_guardado` | `(repositorio, definicion, original, editor, rol, usuario) -> None` | Aplica ediciones y eliminaciones con manejo de errores. | — |
+| `_procesar_bloque` | `(repositorio, definicion, ids, vigencia, rol, usuario) -> None` | Spec 018: aplica la acción en bloque (vigencia o eliminación) con auditoría. | — |
 | `_render_encabezado` | `() -> None` | Ayuda del módulo. | — |
-| `_render_tabla` | `(repositorio, definicion, rol, usuario, opciones_tipo_evento) -> None` | Renderiza el editor tipo Excel y su botón de guardado. | — |
+| `_render_tabla` | `(repositorio, definicion, rol, usuario, opciones_tipo_evento, opciones_fuente, opciones_descripcion) -> None` | Renderiza búsqueda, editor Excel y acciones en bloque de una sub-pestaña. | — |
 | `render_correccion_registros` | `(repositorio: EventosRepository \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
 
 Constantes: `ETIQUETA_GUARDAR`, `MENSAJE_DISPONIBLE`, `ERROR_ELIMINAR_SIN_PERMISO`,
-`MENSAJE_SIN_CAMBIOS` y los prefijos de claves de sesión `PREFIJO_CLAVE_*` /
-`CLAVE_TIPO_MENSAJE`. Punto de entrada:
+`MENSAJE_SIN_CAMBIOS` y, de la spec 018, `ETIQUETA_FILTRO`, `PLACEHOLDER_FILTRO`,
+`ETIQUETA_SELECCION`, `ETIQUETA_VIGENTE_BLOQUE`, `ETIQUETA_ANULADO_BLOQUE`,
+`ETIQUETA_ELIMINAR_BLOQUE`, `MENSAJE_SIN_SELECCION`, `MENSAJE_SIN_COINCIDENCIAS`;
+más los prefijos de claves de sesión `PREFIJO_CLAVE_*` (incluidos
+`PREFIJO_CLAVE_FILTRO` y `PREFIJO_CLAVE_BLOQUE`) y `CLAVE_TIPO_MENSAJE`. Punto de
+entrada:
 `src/certificado_operadores/pages/1_Configuracion.py` (importa
 `render_correccion_registros` y lo invoca en la pestaña de corrección). El
 módulo heredado `modulos/3_Modificacion_Tablas.py` quedó **deprecado** como
@@ -476,21 +493,25 @@ redirección a esta interfaz.
 - **Ubicación:** `tests/test_correccion_registros.py`
 - **Cobertura:** repositorio contra SQLite temporal (tipos de evento, búsqueda
   por código/vigencia/rango de fechas y límite, lotes, reactivar/anular/eliminar
-  individual y por lote con auditoría) y de la spec 015 (catálogo de las cuatro
-  tablas, listado genérico por tabla, `mutar_vigencia` y
-  `eliminar_registros_tabla` con auditoría, selección vacía, clave desconocida);
-  de la spec 017 (conteo de dependencias del operador, validación de códigos,
-  bloqueo de borrado de operadores con hijos S-01, reasignación validada S-02,
-  edición de estado/evento/género con listas S-03/S-04, rechazo de columnas
-  protegidas y rollback atómico con auditoría S-05); funciones puras de la UI
-  (`filas_editor`, `columnas_protegidas`, `configuracion_columnas`,
-  `detectar_cambios`, `ids_eliminados`, `opciones_evento`, `puede_eliminar`); y
-  criterios estáticos (paquete CA-01, sub-pestañas por tabla CA-01, editor
-  `st.data_editor` con `SelectboxColumn` y columnas protegidas CA-01, sin filtros
-  externos masivos CA-02, botón Guardar Cambios CA-04, métodos de seguridad del
-  repositorio CA-02/CA-03, UI sin SQL CA-02/RNF-01, página sin funciones inlined
-  con `render_correccion_registros` CA-02, módulo heredado deprecado sin SQL).
-  Patrón AAA.
+  individual y por lote con auditoría) y de la spec 015 (catálogo de las cinco
+  tablas, listado genérico por tabla —incluida `Códigos` con operador, empresa y
+  `Desde`—, `mutar_vigencia` y `eliminar_registros_tabla` con auditoría, selección
+  vacía, clave desconocida); de la spec 017 (conteo de dependencias del operador,
+  validación de códigos, bloqueo de borrado de operadores con hijos S-01,
+  reasignación validada S-02, edición de estado/evento/género con listas S-03/S-04,
+  rechazo de columnas protegidas y rollback atómico con auditoría S-05); de la
+  spec 018 (catálogos de fuentes y descripciones, listas de licencias
+  `C1`/`C2`/`C3`, fuentes y descripciones oficiales con rechazo de valores fuera
+  del catálogo); funciones puras de la UI (`filas_editor`,
+  `columnas_protegidas`, `configuracion_columnas`, `detectar_cambios`,
+  `ids_eliminados`, `opciones_evento`, `puede_eliminar`, `filtrar_filas`,
+  `filas_con_seleccion`, `ids_seleccionados`); y criterios estáticos (paquete
+  CA-01, sub-pestañas por tabla CA-01, editor `st.data_editor` con
+  `SelectboxColumn`/`CheckboxColumn` y columnas protegidas CA-01, buscador rápido
+  CA-01, botones de acción en bloque CA-05, botón Guardar Cambios CA-04, métodos
+  de seguridad del repositorio CA-02/CA-03, UI sin SQL CA-02/RNF-01, página sin
+  funciones inlined con `render_correccion_registros` CA-02, módulo heredado
+  deprecado sin SQL). Patrón AAA.
 
 ### Módulo `infra.catalogos_repository` — `src/certificado_operadores/infra/catalogos_repository.py`
 
