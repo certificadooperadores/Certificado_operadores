@@ -8,31 +8,34 @@
 
 ## 1. Enfoque
 
-Refactorizar el módulo reporte_comportamientos para integrarlo al patrón Facade. De esta manera, aseguramos la separación de capas funciona de punta a punta.
+Desacoplar la autenticación del usuario en el punto de entrada principal `src/certificado_operadores/Inicio.py`, delegando la validación en `UsuariosFacade.autenticar()` y eliminando cualquier sentencia SQL o uso de bibliotecas criptográficas directas en la interfaz.
 
 ## 2. Arquitectura y capas
 
 ```text
-UI (Streamlit `pages/`)  →  Módulo (`modulos/reporte_comportamientos/ui.py`)  →  Facade Correspondiente  →  Infraestructura
+UI (Streamlit `Inicio.py`)  →  UsuariosFacade  →  Domain (ResultadoAutenticacion)  →  Infra (UsuariosRepository + Seguridad)  →  SQLite
 ```
 
-La página principal en `pages/` solo invocará una función de renderizado `render_page()` desde la carpeta exclusiva del módulo.
+El punto de entrada `Inicio.py` queda 100% libre de SQL y consultas a base de datos.
 
 ## 3. Archivos afectados
 
 | Archivo | Acción (crear/modificar) | Nota |
 |---------|--------------------------|------|
-| `src/certificado_operadores/modulos/reporte_comportamientos/ui.py` | crear | Funciones únicas de interfaz |
-| `src/certificado_operadores/modulos/reporte_comportamientos/__init__.py` | crear | Definición de módulo de Python |
-| `src/certificado_operadores/pages/9_Reporte_Comportamientos_Refactor.py` | crear/modificar | Punto de entrada de Streamlit |
-| `src/certificado_operadores/modulos/9_Reporte_Comportamientos.py` | eliminar | Archivo obsoleto |
+| `src/certificado_operadores/domain/usuarios.py` | modificar | DTO `ResultadoAutenticacion` y constantes de login |
+| `src/certificado_operadores/infra/usuarios_repository.py` | modificar | Método `obtener_para_autenticacion()` |
+| `src/certificado_operadores/facade_usuarios.py` | modificar | Método `autenticar(usuario, contrasena)` |
+| `src/certificado_operadores/Inicio.py` | modificar | Delegación de login a `UsuariosFacade` |
+| `tests/test_autenticacion.py` | crear | Pruebas unitarias de casos de autenticación |
 
 ## 4. Orden de implementación
 
-1. Analizar los requerimientos de datos de `9_Reporte_Comportamientos.py`.
-2. Extender las capas inferiores (Facade/Repositorio) si se requieren nuevos métodos de acceso a datos.
-3. Extraer la vista a `modulos/reporte_comportamientos/ui.py` conectada al Facade.
-4. Crear el punto de entrada en `pages/` y eliminar el archivo heredado.
+1. Extender `domain/usuarios.py` con DTO y mensajes de autenticación.
+2. Añadir método en `infra/usuarios_repository.py` para obtener credenciales seguras.
+3. Implementar `autenticar()` en `facade_usuarios.py` usando `verificar_contrasena`.
+4. Refactorizar `Inicio.py` reemplazando `run_query` y `bcrypt`.
+5. Crear pruebas unitarias en `tests/test_autenticacion.py`.
+6. Validar con `uv run pytest` y `make test`.
 
 ---
 

@@ -10,28 +10,28 @@
 
 - [x] **T-01** — Escribir especificación técnica, plan y tareas.
   - Estado: hecho
-- [ ] **T-02** — Actualizar Facade / Repositorio con métodos necesarios.
-  - Criterio de aceptación: La capa de infraestructura soporta los métodos de reporte_comportamientos.
+- [ ] **T-02** — Extender dominio (`domain/usuarios.py`) y repositorio (`infra/usuarios_repository.py`) para credenciales.
+  - Criterio de aceptación: DTO `ResultadoAutenticacion` y consulta segura de credenciales disponibles.
   - Estado: pendiente
-- [ ] **T-03** — Crear la carpeta `modulos/reporte_comportamientos/` y su archivo `ui.py`.
-  - Criterio de aceptación: Lógica visual extraída, 0% SQL.
+- [ ] **T-03** — Implementar `autenticar()` en `UsuariosFacade`.
+  - Criterio de aceptación: Validación de usuario, estado activo y comprobación con `verificar_contrasena`.
   - Estado: pendiente
-- [ ] **T-04** — Crear página principal en `pages/`.
-  - Criterio de aceptación: Importa `render_page()` desde el nuevo módulo.
+- [ ] **T-04** — Refactorizar `Inicio.py`.
+  - Criterio de aceptación: Elimina `run_query` y `bcrypt`; invoca `UsuariosFacade().autenticar()`.
   - Estado: pendiente
-- [ ] **T-05** — Borrar archivo residual de la carpeta heredada `modulos/`.
-  - Criterio de aceptación: `9_Reporte_Comportamientos.py` eliminado.
+- [ ] **T-05** — Pruebas unitarias en `tests/test_autenticacion.py`.
+  - Criterio de aceptación: `make test` pasa 100% en verde con todos los casos de login cubiertos.
   - Estado: pendiente
 
 ## Progreso
 
 | Tarea | Estado | Commit |
 |-------|--------|--------|
-| T-01  | ✅     | N/A    |
-| T-02  | ⏳     |        |
-| T-03  | ⏳     |        |
-| T-04  | ⏳     |        |
-| T-05  | ⏳     |        |
+| T-01  | hecho  | N/A    |
+| T-02  | pendiente |        |
+| T-03  | pendiente |        |
+| T-04  | pendiente |        |
+| T-05  | pendiente |        |
 
 ---
 
