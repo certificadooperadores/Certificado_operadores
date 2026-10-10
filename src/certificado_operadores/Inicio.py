@@ -25,6 +25,7 @@ _RUTA_SRC = Path(__file__).resolve().parents[1]
 if str(_RUTA_SRC) not in sys.path:
     sys.path.append(str(_RUTA_SRC))
 
+from ui_sesion import gestionar_sesion_activa, render_controles_sesion_lateral  # noqa: E402
 from utils import mostrar_badge_version  # noqa: E402
 
 from certificado_operadores.facade_usuarios import UsuariosFacade  # noqa: E402
@@ -35,31 +36,28 @@ st.markdown(
     unsafe_allow_html=True,
 )
 
-if "logged_in" not in st.session_state:
-    st.session_state["logged_in"] = False
-
-if not st.session_state["logged_in"]:
+# Restaura la sesión desde el token de la URL (spec 013) antes de decidir si se
+# muestra el login. Si el token expiró, ``gestionar_sesion_activa`` ya lo limpia.
+if not gestionar_sesion_activa():
     st.title("🚌 Plataforma de Gestión de Operadores")
     st.subheader("🔒 Iniciar Sesión")
     with st.form("login"):
         u = st.text_input("Usuario")
         p = st.text_input("Contraseña", type="password")
         if st.form_submit_button("Ingresar"):
-            resultado = UsuariosFacade().autenticar(u, p)
+            fachada = UsuariosFacade()
+            resultado = fachada.autenticar(u, p)
             if resultado.exito:
                 st.session_state["logged_in"] = True
                 st.session_state["usuario"] = u
                 st.session_state["rol"] = resultado.rol
+                st.query_params["session"] = fachada.generar_token_sesion(u, resultado.rol)
                 st.rerun()
             else:
                 st.error(f"❌ {resultado.mensaje}")
     st.stop()
 
-st.sidebar.caption(f"👤 {st.session_state.get('usuario', '')} ({st.session_state.get('rol', '')})")
-if st.sidebar.button("🔒 Cerrar Sesión", use_container_width=True):
-    for k in list(st.session_state.keys()):
-        del st.session_state[k]
-    st.rerun()
+render_controles_sesion_lateral(pagina_inicio=True)
 
 st.title("🚌 Plataforma de Gestión de Operadores")
 mostrar_badge_version()

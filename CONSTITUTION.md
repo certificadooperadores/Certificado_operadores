@@ -74,7 +74,7 @@ certificado-operadores/
 │   │   ├── comportamientos_repository.py # repositorio de comportamientos y reincidencia
 │   │   ├── reportes_repository.py # repositorio de reportes y exportaciones
 │   │   ├── backup_service.py      # copias de seguridad de SQLite (sistema de archivos)
-│   │   └── seguridad.py           # hashing de contraseñas (bcrypt)
+│   │   └── seguridad.py           # hashing de contraseñas (bcrypt) y tokens de sesión (HMAC-SHA256)
 │   ├── modulos/                   # un módulo de UI por carpeta (p. ej. admin_operadores/)
 │   │   ├── admin_operadores/
 │   │   │   └── ui.py              # interfaz de Streamlit; consume el Facade, sin SQL
@@ -94,7 +94,8 @@ certificado-operadores/
 │   │       └── ui.py              # interfaz de Streamlit; consume el Facade, sin SQL
 │   ├── pages/                     # puntos de entrada de Streamlit (páginas delgadas)
 │   ├── facade.py                  # Fachada de operadores (UI → Facade → Dominio → Infraestructura)
-│   └── facade_usuarios.py         # Fachada de usuarios (UI → Facade → Dominio → Infraestructura)
+│   ├── facade_usuarios.py         # Fachada de usuarios (UI → Facade → Dominio → Infraestructura)
+│   └── ui_sesion.py               # Sesión persistente y refresco de datos (Streamlit; consume el Facade)
 ├── tests/                   # pruebas (pytest)
 ├── docs/                    # documentación detallada (requerimientos, desacople, manual, funciones)
 ├── scripts/                 # código permanente y reutilizable
@@ -238,6 +239,7 @@ git push
 | 2026-10-09 | Extraer reportes y exportaciones a `modulos/reportes/ui.py` con `ReportesRepository` y eliminar el último `exec` de `pages/3_Reportes.py` | Cumplir la spec 010: cero SQL en la vista, consultas y exportaciones encapsuladas en la infraestructura y cierre de la Fase 3 (todas las páginas maestras desacopladas) |
 | 2026-10-09 | Extraer el login de `Inicio.py` a `UsuariosFacade.autenticar()` con el DTO `ResultadoAutenticacion`, las credenciales `CredencialesUsuario` y `UsuariosRepository.obtener_para_autenticacion()` | Cumplir la spec 011: el punto de entrada queda 100% libre de SQL y de dependencias criptográficas directas (`UI → Facade → Dominio → Infraestructura`) |
 | 2026-10-10 | Añadir `UsuariosRepository.asegurar_tablas()` (DDL idempotente de `dim_usuarios` y `log_auditoria` + siembra del `admin` por defecto) invocado en el constructor, y corregir la ruta de CSVs en `scripts/cargar_excel_a_sqlite.py` a `data/Modelo_Estrella_Final_CSVs` | Cumplir la spec 012: la app arranca y autentica al `admin` sobre una base SQLite nueva sin `OperationalError`; la auto-inicialización queda confinada a la infraestructura (RNF-01) |
+| 2026-10-10 | Firmar tokens de sesión con HMAC-SHA256 en `infra/seguridad.py` (`generar_token_sesion`/`validar_token_sesion`, caducidad de 1200 s), orquestarlos en `UsuariosFacade` y persistir la sesión vía `st.query_params["session"]` con el módulo de UI `ui_sesion.py` (restaurar/renovar, Refrescar Datos y Cerrar Sesión) | Cumplir la spec 013: sobrevivir a `F5` dentro de los 20 minutos, expirar por inactividad, permitir refrescar datos sin cerrar sesión y mantener la UI sin SQL ni criptografía (UI → Facade → Dominio → Infraestructura) |
 
 ## 10. Notas y tareas pendientes
 

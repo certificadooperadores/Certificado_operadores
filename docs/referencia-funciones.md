@@ -16,9 +16,10 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `facade` | `src/certificado_operadores/facade.py` | Fachada de casos de uso; orquesta y delega en el repositorio sin ejecutar SQL. |
 | `admin_operadores` | `src/certificado_operadores/modulos/admin_operadores/ui.py` | Interfaz Streamlit de administración de operadores; consume el Facade y no contiene SQL. |
 | `domain.usuarios` | `src/certificado_operadores/domain/usuarios.py` | DTO de usuario, constantes y reglas puras de autorización. |
-| `infra.seguridad` | `src/certificado_operadores/infra/seguridad.py` | Hashing y verificación de contraseñas con `bcrypt`. |
+| `infra.seguridad` | `src/certificado_operadores/infra/seguridad.py` | Hashing de contraseñas (`bcrypt`) y firma/validación de tokens de sesión (`HMAC-SHA256`). |
 | `infra.usuarios_repository` | `src/certificado_operadores/infra/usuarios_repository.py` | Acceso a datos de `dim_usuarios` y auditoría (SQLAlchemy). |
 | `facade_usuarios` | `src/certificado_operadores/facade_usuarios.py` | Fachada de casos de uso de usuarios; orquesta y delega sin ejecutar SQL. |
+| `ui_sesion` | `src/certificado_operadores/ui_sesion.py` | Soporte de sesión persistente y refresco de datos para Streamlit; consume el Facade. |
 | `gestion_usuarios` | `src/certificado_operadores/modulos/gestion_usuarios/ui.py` | Interfaz Streamlit de gestión de usuarios; consume el Facade y no contiene SQL. |
 | `infra.backup_service` | `src/certificado_operadores/infra/backup_service.py` | Servicio de copias de seguridad de SQLite; encapsula el sistema de archivos. |
 | `administrar_backups` | `src/certificado_operadores/modulos/administrar_backups/ui.py` | Interfaz Streamlit de backups; consume `BackupService` y no contiene SO ni SQL. |
@@ -143,6 +144,15 @@ los mensajes `MENSAJE_*` (incluidos `MENSAJE_LOGIN_EXITOSO`,
 |---------|-------|-------------|----------|
 | `hashear_contrasena` | `(contrasena: str) -> str` | Genera el hash bcrypt de una contraseña. | `str` |
 | `verificar_contrasena` | `(contrasena: str, hash_almacenado: str) -> bool` | Comprueba una contraseña contra su hash. | `bool` |
+| `_clave_sesion` | `() -> bytes` | Devuelve la clave HMAC de ``SECRET_KEY_SESION`` o el valor por defecto. | `bytes` |
+| `_firmar` | `(payload_codificado: str) -> str` | Calcula la firma HMAC-SHA256 de un payload en Base64. | `str` |
+| `generar_token_sesion` | `(usuario: str, rol: str, timestamp: float \| None = None) -> str` | RF-01/RNF-01: firma un token autocontenido `<payload_b64>.<firma_hex>`. | `str` |
+| `validar_token_sesion` | `(token: str, tiempo_max: int = 1200, ahora: float \| None = None) -> tuple[bool, str \| None, str \| None, str]` | Verifica firma y caducidad (20 min); devuelve `(válido, usuario, rol, motivo)`. | `tuple` |
+
+Constantes (spec 013): `SEGUNDOS_INACTIVIDAD_SESION` (1200),
+`VARIABLE_ENTORNO_CLAVE_SESION`, `CLAVE_SESION_POR_DEFECTO`, las claves del
+payload `CLAVE_PAYLOAD_*`, los motivos `MOTIVO_VALIDO`, `MOTIVO_EXPIRADO`,
+`MOTIVO_INVALIDO` y `SEPARADOR_TOKEN`.
 
 ### Módulo `infra.usuarios_repository` — `src/certificado_operadores/infra/usuarios_repository.py`
 
@@ -176,6 +186,8 @@ Constantes de auto-aprovisionamiento (spec 012): `USUARIO_ADMIN_POR_DEFECTO`,
 | `UsuariosFacade.autenticar` | `(usuario: str, contrasena: str) -> ResultadoAutenticacion` | RF-01..RF-04: valida credenciales, estado activo y contraseña contra el hash. | `ResultadoAutenticacion` |
 | `UsuariosFacade.crear_usuario` | `(usuario, contrasena, rol, *, usuario_solicitante="") -> ResultadoOperacion` | RF-02: valida existencia, hashea con bcrypt y crea. | `ResultadoOperacion` |
 | `UsuariosFacade.modificar_usuario` | `(usuario, rol, estado, contrasena=None, *, rol_solicitante="", usuario_solicitante="") -> ResultadoOperacion` | RF-03: aplica permisos y actualiza la cuenta. | `ResultadoOperacion` |
+| `UsuariosFacade.generar_token_sesion` | `(usuario: str, rol: str) -> str` | CA-02: firma un token de sesión delegando en `infra.seguridad`. | `str` |
+| `UsuariosFacade.validar_y_renovar_sesion` | `(token: str) -> tuple[bool, str \| None, str \| None, str \| None]` | CA-02: valida el token y, si es válido, devuelve uno renovado. | `tuple` |
 
 ### Módulo `gestion_usuarios` — `src/certificado_operadores/modulos/gestion_usuarios/ui.py`
 
@@ -211,13 +223,17 @@ Constante: `AYUDA_CONTRASENA_OPCIONAL`. Punto de entrada:
 
 ### Punto de entrada `Inicio.py` — `src/certificado_operadores/Inicio.py`
 
-Punto de entrada de Streamlit (spec 011). Captura las credenciales del
+Punto de entrada de Streamlit (specs 011 y 013). Captura las credenciales del
 formulario de login y delega la autenticación en
 `UsuariosFacade.autenticar(usuario, contrasena)`; no contiene sentencias SQL ni
 importa controladores de base de datos o librerías criptográficas (RNF-01).
 Solo tras un resultado exitoso persiste `logged_in`, `usuario` y `rol` en
-`st.session_state`. No define funciones propias; el ajuste de `sys.path` permite
-importar el paquete `certificado_operadores` desde la app.
+`st.session_state` y publica el token firmado en `st.query_params["session"]`
+(spec 013). Antes de mostrar el login intenta restaurar la sesión con
+`ui_sesion.gestionar_sesion_activa()` y, ya autenticado, pinta los controles
+laterales con `ui_sesion.render_controles_sesion_lateral(pagina_inicio=True)`. No
+define funciones propias; el ajuste de `sys.path` permite importar el paquete
+`certificado_operadores` desde la app.
 
 ### Módulo `Inicio.py` — pruebas
 
@@ -233,6 +249,43 @@ importar el paquete `certificado_operadores` desde la app.
   criptografía CA-02/RNF-01, delegación en `UsuariosFacade` CA-01/CA-02,
   persistencia de la sesión solo tras el éxito y compilación sin errores de
   sintaxis). Patrón AAA.
+
+### Módulo `ui_sesion` — `src/certificado_operadores/ui_sesion.py`
+
+Soporte de sesión persistente y refresco de datos para Streamlit (spec 013).
+Capa de presentación pura: restaura la sesión desde el token firmado que viaja en
+`st.query_params["session"]`, la renueva con la actividad reciente y pinta los
+controles laterales de **Refrescar Datos** y **Cerrar Sesión**. No contiene SQL,
+criptografía ni lógica de negocio: la firma y validación de tokens pasan por
+`UsuariosFacade`.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `_restaurar_estado_sesion` | `(usuario: str, rol: str) -> None` | Registra la sesión restaurada en `st.session_state`. | — |
+| `_actualizar_token_url` | `(fachada, usuario, rol) -> None` | Renueva el token de la URL con la actividad actual. | — |
+| `_limpiar_sesion` | `() -> None` | Borra el estado de sesión y el token de la URL. | — |
+| `gestionar_sesion_activa` | `(fachada: UsuariosFacade \| None = None) -> bool` | CA-03/CA-04: restaura la sesión desde la URL o la cierra si expiró. | `bool` |
+| `_refrescar_datos` | `(fachada, usuario, rol) -> None` | CA-05: limpia las cachés de Streamlit y recarga sin cerrar sesión. | — |
+| `render_controles_sesion_lateral` | `(fachada=None, *, pagina_inicio: bool = False) -> None` | Pinta los controles laterales (Refrescar Datos y Cerrar Sesión). | — |
+
+Constantes: `CLAVE_QUERY_SESION`, `CLAVE_ESTADO_LOGGED_IN`, `CLAVE_ESTADO_USUARIO`,
+`CLAVE_ESTADO_ROL`, `PAGINA_INICIO`, `ETIQUETA_REFRESCAR_DATOS`,
+`ETIQUETA_CERRAR_SESION` y `MENSAJE_SESION_EXPIRADA`. Punto de entrada:
+importado por `Inicio.py` y por `pages/1_Configuracion.py`,
+`pages/2_Administracion_Operadores.py` y `pages/3_Reportes.py`.
+
+### Módulo `ui_sesion` — pruebas
+
+- **Ubicación:** `tests/test_seguridad_sesion.py`
+- **Cobertura:** tokens HMAC-SHA256 (válidos dentro de 20 minutos, límite exacto
+  de 1200 s, expiración a los 1201 s, firma manipulada, payload alterado, tokens
+  mal formados y clave de entorno); `UsuariosFacade.generar_token_sesion` y
+  `validar_y_renovar_sesion` (renovación, expirado e inválido); y la capa de UI
+  con dobles de prueba (restauración desde la URL, expiración con limpieza y
+  aviso, renovación por actividad, refresco con limpieza de caché y cierre de
+  sesión). Incluye criterios estáticos (sin SQL en `ui_sesion`, controles de
+  refrescar/cerrar, gestión de sesión en `Inicio.py` y en las tres páginas).
+  Patrón AAA.
 
 ### Módulo `infra.backup_service` — `src/certificado_operadores/infra/backup_service.py`
 

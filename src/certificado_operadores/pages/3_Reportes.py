@@ -8,18 +8,15 @@ Autor: Ing. Miguel Angel Ortiz Roldan
 """
 
 import streamlit as st
+from ui_sesion import gestionar_sesion_activa, render_controles_sesion_lateral
 from utils import mostrar_badge_version
 
 st.set_page_config(page_title="Reportes", page_icon="📊", layout="wide")
-if not st.session_state.get("logged_in"):
+if not gestionar_sesion_activa():
     st.error("Acceso Denegado.")
     st.stop()
 
-st.sidebar.caption(f"👤 {st.session_state.get('usuario', '')} ({st.session_state.get('rol', '')})")
-if st.sidebar.button("🔒 Cerrar Sesión", use_container_width=True):
-    for clave in list(st.session_state.keys()):
-        del st.session_state[clave]
-    st.switch_page("Inicio.py")
+render_controles_sesion_lateral()
 
 mostrar_badge_version()
 

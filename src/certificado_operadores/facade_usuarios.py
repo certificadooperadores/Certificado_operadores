@@ -36,6 +36,7 @@ from certificado_operadores.domain.usuarios import (
     puede_inactivar_usuario,
     puede_modificar_usuario,
 )
+from certificado_operadores.infra import seguridad
 from certificado_operadores.infra.seguridad import hashear_contrasena, verificar_contrasena
 from certificado_operadores.infra.usuarios_repository import UsuariosRepository
 
@@ -126,6 +127,44 @@ class UsuariosFacade:
         if not self._verificador(contrasena, credenciales.password_hash):
             return ResultadoAutenticacion(False, MENSAJE_CONTRASENA_INCORRECTA)
         return ResultadoAutenticacion(True, MENSAJE_LOGIN_EXITOSO, credenciales.rol)
+
+    def generar_token_sesion(self, usuario: str, rol: str) -> str:
+        """Genera un token de sesión firmado para una cuenta autenticada.
+
+        Delega en la capa de infraestructura la firma HMAC-SHA256 del token, de
+        modo que la interfaz nunca manipule criptografía directamente (RNF-01).
+
+        Args:
+            usuario: Nombre de la cuenta autenticada.
+            rol: Rol de la cuenta autenticada.
+
+        Returns:
+            El token de sesión listo para persistirse en la URL.
+        """
+        return seguridad.generar_token_sesion(usuario, rol)
+
+    def validar_y_renovar_sesion(
+        self, token: str
+    ) -> tuple[bool, str | None, str | None, str | None]:
+        """Valida un token de sesión y, si es válido, lo renueva por actividad.
+
+        Comprueba la firma y la caducidad del token (20 minutos de inactividad) y,
+        cuando es válido, emite uno nuevo con la marca de tiempo actualizada para
+        prolongar la sesión del usuario activo.
+
+        Args:
+            token: Token de sesión recibido desde la URL.
+
+        Returns:
+            Una tupla ``(es_valido, usuario, rol, nuevo_token)``. Si el token es
+            válido, ``usuario`` y ``rol`` identifican la cuenta y ``nuevo_token``
+            es el token renovado; si no lo es, los tres últimos valores son
+            ``None``.
+        """
+        es_valido, usuario, rol, _motivo = seguridad.validar_token_sesion(token)
+        if not es_valido:
+            return False, None, None, None
+        return True, usuario, rol, seguridad.generar_token_sesion(usuario or "", rol or "")
 
     def crear_usuario(
         self, usuario: str, contrasena: str, rol: str, *, usuario_solicitante: str = ""

@@ -3,21 +3,18 @@ from modulos.administrar_backups.ui import render_administrar_backups
 from modulos.catalogos.ui import render_catalogos
 from modulos.correccion_registros.ui import render_correccion_registros
 from modulos.gestion_usuarios.ui import render_gestion_usuarios
+from ui_sesion import gestionar_sesion_activa, render_controles_sesion_lateral
 from utils import mostrar_badge_version
 
 st.set_page_config(page_title="Configuración", page_icon="⚙️", layout="wide")
-if not st.session_state.get("logged_in"):
+if not gestionar_sesion_activa():
     st.error("Acceso Denegado.")
     st.stop()
 if st.session_state.get("rol") not in ["Administrador", "Super Administrador"]:
     st.error("Acceso Denegado. Solo Administradores.")
     st.stop()
 
-st.sidebar.caption(f"👤 {st.session_state.get('usuario', '')} ({st.session_state.get('rol', '')})")
-if st.sidebar.button("🔒 Cerrar Sesión", use_container_width=True):
-    for k in list(st.session_state.keys()):
-        del st.session_state[k]
-    st.switch_page("Inicio.py")
+render_controles_sesion_lateral()
 
 mostrar_badge_version()
 rol = st.session_state.get("rol", "")
