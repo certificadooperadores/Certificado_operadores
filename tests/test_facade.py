@@ -16,6 +16,11 @@ from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
 
+from certificado_operadores.domain.models import (
+    EstadisticasBasicas,
+    EstadoCertificado,
+    OperadorInfo,
+)
 from certificado_operadores.facade import OperadoresFacade
 
 # --- Esquema mínimo para las pruebas ----------------------------------------
@@ -170,7 +175,7 @@ def test_obtener_operador_por_cedula(fachada: OperadoresFacade) -> None:
     operador = fachada.obtener_operador_por_cedula(cedula)
 
     # Assert
-    assert operador is not None
+    assert isinstance(operador, OperadorInfo)
     assert operador.codigo == 5002
     assert operador.cedula == 1002
     assert operador.nombre_empresa == "Bnm"
@@ -226,6 +231,7 @@ def test_validar_certificado_por_vencer(fachada: OperadoresFacade) -> None:
     estado = fachada.validar_certificado(codigo)
 
     # Assert
+    assert isinstance(estado, EstadoCertificado)
     assert estado.estado == "POR_VENCER"
     assert estado.cancelado is False
     assert estado.dias_restantes is not None
@@ -297,6 +303,7 @@ def test_estadisticas_basicas(fachada: OperadoresFacade) -> None:
     estadisticas = fachada.estadisticas_basicas()
 
     # Assert
+    assert isinstance(estadisticas, EstadisticasBasicas)
     assert estadisticas.total_operadores == 5
     assert estadisticas.operadores_vigentes == 4
     assert estadisticas.operadores_anulados == 1

@@ -62,6 +62,10 @@
 ```text
 certificado-operadores/
 ├── src/certificado_operadores/    # código del paquete (src-layout)
+│   ├── domain/                    # capa de dominio (DTOs, constantes y lógica pura)
+│   │   └── models.py
+│   ├── infra/                     # capa de infraestructura (acceso a datos)
+│   │   └── repository.py
 │   └── facade.py                  # Fachada de casos de uso (UI → Facade → Dominio → Infraestructura)
 ├── tests/                   # pruebas (pytest)
 ├── docs/                    # documentación detallada (requerimientos, desacople, manual, funciones)
@@ -195,6 +199,7 @@ git push
 |----------|----------|--------|
 | 2026-10-09 | Adoptar `CONSTITUTION.md` como fuente única de verdad | Claridad legal y operativa |
 | 2026-10-09 | Crear `OperadoresFacade` en `src/certificado_operadores/facade.py` | Cumplir la regla Facade: la UI no accede directamente a la base de datos |
+| 2026-10-09 | Modularizar `facade.py` en `domain/models.py` e `infra/repository.py` | Separar responsabilidades (Clean Architecture): el Facade solo orquesta; el dominio define DTOs, constantes y lógica pura; la infraestructura encapsula el SQL |
 
 ## 10. Notas y tareas pendientes
 

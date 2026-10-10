@@ -11,28 +11,23 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | Módulo | Archivo | Responsabilidad |
 |--------|---------|-----------------|
 | `db` | `src/certificado_operadores/db.py` | Motor y utilidades de conexión a SQLite. |
-| `facade` | `src/certificado_operadores/facade.py` | Fachada de casos de uso de operadores (consultas, certificados y estadísticas); aísla a la UI del acceso a datos. |
+| `domain` | `src/certificado_operadores/domain/models.py` | DTOs, constantes de negocio y funciones puras; sin dependencias externas. |
+| `infra` | `src/certificado_operadores/infra/repository.py` | Repositorio de acceso a datos (SQLAlchemy) que devuelve modelos de dominio. |
+| `facade` | `src/certificado_operadores/facade.py` | Fachada de casos de uso; orquesta y delega en el repositorio sin ejecutar SQL. |
 
 ## Funciones
 
-### Módulo `facade`
+### Módulo `domain` — `src/certificado_operadores/domain/models.py`
 
-| Función | Ubicación (archivo:línea) | Firma | Descripción | Devuelve |
-|---------|---------------------------|-------|-------------|----------|
-| `OperadoresFacade.__init__` | `src/certificado_operadores/facade.py` | `(engine: Engine \| None = None) -> None` | Inicializa la fachada inyectando el motor. | — |
-| `OperadoresFacade.motor` | `src/certificado_operadores/facade.py` | `propiedad -> Engine` | Motor SQLAlchemy (inyectado o resuelto de `db.get_engine`). | `Engine` |
-| `OperadoresFacade.verificar_conexion` | `src/certificado_operadores/facade.py` | `() -> bool` | Verifica el estado de la conexión a SQLite. | `bool` |
-| `OperadoresFacade.obtener_operador_por_cedula` | `src/certificado_operadores/facade.py` | `(cedula: int) -> OperadorInfo \| None` | Consulta un operador por número de cédula. | `OperadorInfo` o `None` |
-| `OperadoresFacade.obtener_operador_por_codigo` | `src/certificado_operadores/facade.py` | `(codigo: int) -> OperadorInfo \| None` | Consulta un operador por código de operación. | `OperadorInfo` o `None` |
-| `OperadoresFacade.validar_certificado` | `src/certificado_operadores/facade.py` | `(codigo: int) -> EstadoCertificado` | Valida la vigencia del certificado de idoneidad. | `EstadoCertificado` |
-| `OperadoresFacade.estadisticas_basicas` | `src/certificado_operadores/facade.py` | `() -> EstadisticasBasicas` | Conteos generales del sistema. | `EstadisticasBasicas` |
-| `OperadorInfo.nombre_completo` | `src/certificado_operadores/facade.py` | `() -> str` | Une nombres y apellidos del operador. | `str` |
-| `_parsear_fecha` | `src/certificado_operadores/facade.py` | `(valor: object) -> date \| None` | Convierte una fecha de SQLite a `date`. | `date` o `None` |
-| `_sumar_anios` | `src/certificado_operadores/facade.py` | `(fecha: date, anios: int) -> date` | Suma años ajustando el 29 de febrero. | `date` |
-| `_clasificar_estado` | `src/certificado_operadores/facade.py` | `(dias_restantes: int) -> str` | Clasifica el certificado (VIGENTE/POR_VENCER/VENCIDO). | `str` |
-| `_contar` | `src/certificado_operadores/facade.py` | `(conexion: Connection, sentencia: str, parametros: dict[str, int] \| None = None) -> int` | Ejecuta un `COUNT(*)` de forma segura. | `int` |
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `OperadorInfo.nombre_completo` | `() -> str` | Une nombres y apellidos del operador. | `str` |
+| `_parsear_fecha` | `(valor: object) -> date \| None` | Convierte una fecha textual a `date`. | `date` o `None` |
+| `_sumar_anios` | `(fecha: date, anios: int) -> date` | Suma años ajustando el 29 de febrero. | `date` |
+| `_clasificar_estado` | `(dias_restantes: int) -> str` | Clasifica el certificado (VIGENTE/POR_VENCER/VENCIDO). | `str` |
+| `calcular_estado_certificado` | `(codigo: int, ultima_certificacion: object, cancelado: bool) -> EstadoCertificado` | Aplica la regla de negocio y construye el estado del certificado. | `EstadoCertificado` |
 
-### DTOs (dataclasses) del módulo `facade`
+#### DTOs (dataclasses) del módulo `domain`
 
 | Clase | Campos | Descripción |
 |-------|--------|-------------|
@@ -40,52 +35,91 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `EstadoCertificado` | `codigo, fecha_certificado, fecha_vencimiento, dias_restantes, estado, cancelado` | Resultado de validar el certificado. |
 | `EstadisticasBasicas` | `total_operadores, operadores_vigentes, operadores_anulados, total_empresas, total_licencias` | Conteos para tableros. |
 
+#### Constantes de negocio
+
+`VIGENCIA_ACTIVA`, `VIGENCIA_ANULADA`, `ANIOS_VIGENCIA_CERTIFICADO`,
+`DIAS_ALERTA_VENCIMIENTO`, `TIPOS_EVENTO_CERTIFICADO`, `TIPO_EVENTO_CANCELACION`
+y los estados `ESTADO_VIGENTE`, `ESTADO_POR_VENCER`, `ESTADO_VENCIDO`,
+`ESTADO_SIN_CERTIFICADO`, `ESTADO_CANCELADO`.
+
+### Módulo `infra` — `src/certificado_operadores/infra/repository.py`
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `OperadoresRepository.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa el repositorio inyectando el motor. | — |
+| `OperadoresRepository.motor` | `propiedad -> Engine` | Motor SQLAlchemy (inyectado o resuelto de `db.get_engine`). | `Engine` |
+| `OperadoresRepository.verificar_conexion` | `() -> bool` | Verifica el estado de la conexión a SQLite. | `bool` |
+| `OperadoresRepository.obtener_operador_por_cedula` | `(cedula: int) -> OperadorInfo \| None` | Consulta un operador por número de cédula. | `OperadorInfo` o `None` |
+| `OperadoresRepository.obtener_operador_por_codigo` | `(codigo: int) -> OperadorInfo \| None` | Consulta un operador por código de operación. | `OperadorInfo` o `None` |
+| `OperadoresRepository.validar_certificado` | `(codigo: int) -> EstadoCertificado` | Consulta certificación y cancelaciones; calcula el estado con el dominio. | `EstadoCertificado` |
+| `OperadoresRepository.estadisticas_basicas` | `() -> EstadisticasBasicas` | Conteos generales del sistema. | `EstadisticasBasicas` |
+| `OperadoresRepository._consultar_operador` | `(sentencia: TextClause, parametros: dict[str, int]) -> OperadorInfo \| None` | Ejecuta la consulta de operador y mapea la fila al DTO. | `OperadorInfo` o `None` |
+| `_contar` | `(conexion: Connection, sentencia: TextClause, parametros: dict[str, int] \| None = None) -> int` | Ejecuta un `COUNT(*)` de forma segura. | `int` |
+
+### Módulo `facade` — `src/certificado_operadores/facade.py`
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `OperadoresFacade.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa la fachada y su repositorio. | — |
+| `OperadoresFacade.motor` | `propiedad -> Engine` | Motor SQLAlchemy delegado al repositorio. | `Engine` |
+| `OperadoresFacade.verificar_conexion` | `() -> bool` | Verifica el estado de la conexión a SQLite. | `bool` |
+| `OperadoresFacade.obtener_operador_por_cedula` | `(cedula: int) -> OperadorInfo \| None` | Consulta un operador por número de cédula. | `OperadorInfo` o `None` |
+| `OperadoresFacade.obtener_operador_por_codigo` | `(codigo: int) -> OperadorInfo \| None` | Consulta un operador por código de operación. | `OperadorInfo` o `None` |
+| `OperadoresFacade.validar_certificado` | `(codigo: int) -> EstadoCertificado` | Valida la vigencia del certificado de idoneidad. | `EstadoCertificado` |
+| `OperadoresFacade.estadisticas_basicas` | `() -> EstadisticasBasicas` | Conteos generales del sistema. | `EstadisticasBasicas` |
+
 ## Detalle
 
-### `OperadoresFacade.verificar_conexion`
+### `OperadoresRepository.verificar_conexion`
 
-- **Ubicación:** `src/certificado_operadores/facade.py`
+- **Ubicación:** `src/certificado_operadores/infra/repository.py`
 - **Responsabilidad única:** comprobar que la base SQLite responde.
 - **Parámetros:** ninguno.
 - **Devuelve:** `True` si la conexión es válida; `False` ante `SQLAlchemyError`.
 - **Errores:** no propaga; los captura y los traduce a `False`.
 
-### `OperadoresFacade.obtener_operador_por_cedula`
+### `OperadoresRepository.obtener_operador_por_cedula`
 
-- **Ubicación:** `src/certificado_operadores/facade.py`
+- **Ubicación:** `src/certificado_operadores/infra/repository.py`
 - **Responsabilidad única:** buscar el operador asociado a una cédula.
 - **Parámetros:** `cedula` — documento (`dim_persona.id_persona`).
 - **Devuelve:** `OperadorInfo` del registro vigente de menor código, o `None`.
 - **Errores:** ninguno (consulta parametrizada con `LEFT JOIN`).
 
-### `OperadoresFacade.obtener_operador_por_codigo`
+### `OperadoresRepository.obtener_operador_por_codigo`
 
-- **Ubicación:** `src/certificado_operadores/facade.py`
+- **Ubicación:** `src/certificado_operadores/infra/repository.py`
 - **Responsabilidad única:** buscar el operador asociado a un código de operación.
 - **Parámetros:** `codigo` — `dim_codigo.id_codigo`.
 - **Devuelve:** `OperadorInfo` o `None`.
 - **Errores:** ninguno.
 
-### `OperadoresFacade.validar_certificado`
+### `OperadoresRepository.validar_certificado`
 
-- **Ubicación:** `src/certificado_operadores/facade.py`
-- **Responsabilidad única:** calcular la vigencia del certificado de un operador.
+- **Ubicación:** `src/certificado_operadores/infra/repository.py`
+- **Responsabilidad única:** consultar los datos y obtener el estado del certificado.
 - **Parámetros:** `codigo` — `dim_codigo.id_codigo`.
 - **Devuelve:** `EstadoCertificado` con estado `VIGENTE`, `POR_VENCER`, `VENCIDO`, `SIN_CERTIFICADO` o `CANCELADO`.
-- **Errores:** ninguno de negocio; aplica `ANIOS_VIGENCIA_CERTIFICADO` (3 años) y `DIAS_ALERTA_VENCIMIENTO` (90 días).
+- **Errores:** ninguno de negocio; el cálculo puro lo realiza `calcular_estado_certificado` en el dominio.
 
-### `OperadoresFacade.estadisticas_basicas`
+### `OperadoresRepository.estadisticas_basicas`
 
-- **Ubicación:** `src/certificado_operadores/facade.py`
+- **Ubicación:** `src/certificado_operadores/infra/repository.py`
 - **Responsabilidad única:** contar operadores, vigencias, empresas y licencias.
 - **Parámetros:** ninguno.
 - **Devuelve:** `EstadisticasBasicas`. Si el esquema no está cargado, devuelve ceros.
 - **Errores:** no propaga `SQLAlchemyError`; devuelve conteos en cero.
 
+### `OperadoresFacade`
+
+- **Ubicación:** `src/certificado_operadores/facade.py`
+- **Responsabilidad única:** exponer los casos de uso y delegar en `OperadoresRepository`.
+- **Contrato:** mantiene la firma pública previa; no contiene SQL ni reglas de negocio.
+
 ### Pruebas
 
 - **Ubicación:** `tests/test_facade.py`
-- **Cobertura:** conexión (éxito y fallo), consulta por cédula/código (con y sin resultados), validación de certificado (por vencer, vigente, vencido, sin certificado, cancelado) y estadísticas básicas. Patrón AAA con SQLite temporal.
+- **Cobertura:** conexión (éxito y fallo), consulta por cédula/código (con y sin resultados), validación de certificado (por vencer, vigente, vencido, sin certificado, cancelado) y estadísticas básicas. Patrón AAA con SQLite temporal e importación de los DTOs desde `domain.models`.
 
 ---
 
