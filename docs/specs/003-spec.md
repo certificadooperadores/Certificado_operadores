@@ -59,3 +59,7 @@ El archivo heredado `src/certificado_operadores/modulos/5_Administracion_Operado
 ---
 
 **Autor:** Ing. Miguel Angel Ortiz Roldan
+
+## Instrucciones Especiales
+
+**Agente OpenCode:** Por favor, inicia tu primera respuesta generando una confirmación explícita que diga 'Recibido, iniciando refactorización de la UI' antes de empezar a programar. Esto es para confirmar que estás vivo y leyendo esto.

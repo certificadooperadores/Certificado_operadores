@@ -14,6 +14,7 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `domain` | `src/certificado_operadores/domain/models.py` | DTOs, constantes de negocio y funciones puras; sin dependencias externas. |
 | `infra` | `src/certificado_operadores/infra/repository.py` | Repositorio de acceso a datos (SQLAlchemy) que devuelve modelos de dominio. |
 | `facade` | `src/certificado_operadores/facade.py` | Fachada de casos de uso; orquesta y delega en el repositorio sin ejecutar SQL. |
+| `admin_operadores` | `src/certificado_operadores/modulos/admin_operadores/ui.py` | Interfaz Streamlit de administración de operadores; consume el Facade y no contiene SQL. |
 
 ## Funciones
 
@@ -67,6 +68,36 @@ y los estados `ESTADO_VIGENTE`, `ESTADO_POR_VENCER`, `ESTADO_VENCIDO`,
 | `OperadoresFacade.obtener_operador_por_codigo` | `(codigo: int) -> OperadorInfo \| None` | Consulta un operador por código de operación. | `OperadorInfo` o `None` |
 | `OperadoresFacade.validar_certificado` | `(codigo: int) -> EstadoCertificado` | Valida la vigencia del certificado de idoneidad. | `EstadoCertificado` |
 | `OperadoresFacade.estadisticas_basicas` | `() -> EstadisticasBasicas` | Conteos generales del sistema. | `EstadisticasBasicas` |
+
+### Módulo `admin_operadores` — `src/certificado_operadores/modulos/admin_operadores/ui.py`
+
+Interfaz de Streamlit del módulo de administración de operadores (spec 003).
+Página delgada: busca la cédula en `OperadoresFacade` y autocompleta el
+formulario con el DTO `OperadorInfo`. No contiene sentencias de base de datos
+(RNF-01) ni conoce el esquema (RNF-02).
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `parsear_cedula` | `(texto: str) -> int \| None` | Convierte el texto del campo en una cédula positiva. | `int` o `None` |
+| `construir_valores_formulario` | `(operador: OperadorInfo \| None) -> dict[str, Any]` | Mapea el DTO del Facade a los valores por defecto del formulario (estado Creación/Actualización). | `dict` |
+| `_indice_genero` | `(genero: str) -> int` | Índice del género dentro de `GENEROS`. | `int` |
+| `_texto_opcional` | `(valor: Any) -> str` | Convierte un identificador opcional a texto. | `str` |
+| `_render_encabezado` | `() -> None` | Título, estilos y ayuda del módulo. | — |
+| `_render_formulario` | `(valores: dict[str, Any]) -> None` | Pinta el formulario autocompletado. | — |
+| `_render_consulta` | `(fachada: OperadoresFacade) -> None` | Captura la cédula, consulta el Facade y autocompleta. | — |
+| `render_page` | `(fachada: OperadoresFacade \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
+
+Constantes: `GENEROS`, `ESTADO_CREACION`, `ESTADO_ACTUALIZACION`.
+
+Punto de entrada: `src/certificado_operadores/pages/2_Administracion_Operadores.py`
+(importa `OperadoresFacade` y delega en `render_page`).
+
+### Módulo `admin_operadores` — pruebas
+
+- **Ubicación:** `tests/test_admin_operadores_ui.py`
+- **Cobertura:** `parsear_cedula`, `construir_valores_formulario` (creación y
+  actualización), ausencia de SQL/conexión directa en la UI (RNF-01), uso del
+  `OperadoresFacade` (CA-01) y compilación de la página (CA-03). Patrón AAA.
 
 ## Detalle
 

@@ -66,6 +66,10 @@ certificado-operadores/
 │   │   └── models.py
 │   ├── infra/                     # capa de infraestructura (acceso a datos)
 │   │   └── repository.py
+│   ├── modulos/                   # un módulo de UI por carpeta (p. ej. admin_operadores/)
+│   │   └── admin_operadores/
+│   │       └── ui.py              # interfaz de Streamlit; consume el Facade, sin SQL
+│   ├── pages/                     # puntos de entrada de Streamlit (páginas delgadas)
 │   └── facade.py                  # Fachada de casos de uso (UI → Facade → Dominio → Infraestructura)
 ├── tests/                   # pruebas (pytest)
 ├── docs/                    # documentación detallada (requerimientos, desacople, manual, funciones)
@@ -200,6 +204,7 @@ git push
 | 2026-10-09 | Adoptar `CONSTITUTION.md` como fuente única de verdad | Claridad legal y operativa |
 | 2026-10-09 | Crear `OperadoresFacade` en `src/certificado_operadores/facade.py` | Cumplir la regla Facade: la UI no accede directamente a la base de datos |
 | 2026-10-09 | Modularizar `facade.py` en `domain/models.py` e `infra/repository.py` | Separar responsabilidades (Clean Architecture): el Facade solo orquesta; el dominio define DTOs, constantes y lógica pura; la infraestructura encapsula el SQL |
+| 2026-10-09 | Mover la UI de administración de operadores a `modulos/admin_operadores/ui.py` consumiendo `OperadoresFacade` | Cumplir la spec 003: la UI no ejecuta SQL ni conoce el esquema; se elimina el heredado `modulos/5_Administracion_Operadores.py` |
 
 ## 10. Notas y tareas pendientes
 
