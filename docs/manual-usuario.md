@@ -77,19 +77,50 @@ Permite actualizar el rol, estado o restablecer la contraseña de una cuenta exi
 
 ---
 
-## 3. Sesión, Refresco de Datos y Navegación
+## 3. Panel: Administrar Backups (Exclusivo Super Administrador)
 
-### 3.1 Persistencia de Sesión (Recarga del Navegador)
+Ubicación: **Configuración** -> Pestaña **Administrar Backups**.
+
+Este módulo es de acceso **exclusivo para el rol Super Administrador**. Permite salvaguardar el estado de la base de datos `operadores.db` y recuperarse ante fallos o errores de digitación masiva.
+
+### 3.1 Creación de Respaldos
+* **Botón Crear Respaldo Ahora:** Genera una copia consistente en caliente de la base de datos actual en la carpeta `backups/`.
+* **Nomenclatura:** Asigna automáticamente el nombre versionado por fecha (ejemplo: `10-10-2026_V1.db`, `10-10-2026_V2.db`).
+
+### 3.2 Protección y Eliminación
+* **Proteger Respaldo:** Agrega la extensión `.protegido.db` para impedir que el archivo sea eliminado accidentalmente o por depuraciones automáticas.
+* **Desproteger Respaldo:** Permite habilitar nuevamente el respaldo para su borrado.
+* **Eliminar Respaldo:** Borra el archivo físico del disco (solo habilitado para respaldos no protegidos).
+
+### 3.3 Restauración con Comparación Preventiva de Registros
+Antes de sobrescribir la base de datos activa, el sistema ofrece un mecanismo de análisis de impacto:
+1. **Seleccionar Respaldo:** Elija de la lista desplegable el archivo que desea restaurar.
+2. **Analizar Diferencias:** El sistema lee el respaldo en modo solo lectura y compara los conteos de filas contra la base de datos actual en las tablas críticas:
+   * `dim_persona` (Operadores)
+   * `fact_licencias` (Licencias)
+   * `fact_eventos_operador` (Eventos)
+   * `fact_comportamiento` (Comportamientos)
+   * `dim_usuarios` (Usuarios del sistema)
+3. **Semáforo de Impacto:** La tabla comparativa indica con claridad si habrá ganancia o pérdida neta de registros (ejemplo: `-150 operadores`).
+4. **Respaldo de Rescate Automático:** Al confirmar la restauración, el sistema crea automáticamente un respaldo preventivo de seguridad (`pre_restauracion_...db`) antes de aplicar los cambios.
+5. **Confirmar Restauración:** Al hacer clic en el botón de confirmación, se sobrescribe atómicamente la base de datos, se actualiza la tabla de auditoría `dim_version_bd` y se refresca el indicador de versión de la barra lateral.
+
+---
+
+## 4. Sesión, Refresco de Datos y Navegación
+
+### 4.1 Persistencia de Sesión (Recarga del Navegador)
 * La sesión del usuario permanece activa incluso al presionar `F5` o recargar la página del navegador, evitando cierres de sesión accidentales mientras trabaja.
+* Si transcurren más de 20 minutos de inactividad, la sesión expira automáticamente por seguridad.
 * Para salir de forma segura, utilice siempre el botón **Cerrar Sesión** ubicado en la barra lateral.
 
-### 3.2 Botón Refrescar Datos (Barra Lateral)
+### 4.2 Botón Refrescar Datos (Barra Lateral)
 * Para actualizar las vistas y consultar los últimos cambios de la base de datos (por ejemplo, tras una sincronización de OneDrive o un cargue masivo), utilice el botón **Refrescar Datos** en la barra lateral.
 * Esto limpia la caché interna y reconecta la información sin necesidad de cerrar su sesión ni recargar el navegador.
 
 ---
 
-## 4. Carga Masiva de Datos Iniciales (Scripts)
+## 5. Carga Masiva de Datos Iniciales (Scripts)
 
 Para cargas iniciales o migraciones masivas desde archivos Excel (`.xlsx`):
 
