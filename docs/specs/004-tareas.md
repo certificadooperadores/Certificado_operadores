@@ -10,28 +10,28 @@
 
 - [x] **T-01** — Escribir especificación técnica, plan y tareas.
   - Estado: hecho
-- [ ] **T-02** — Actualizar Facade / Repositorio con métodos necesarios.
-  - Criterio de aceptación: La capa de infraestructura soporta los métodos de gestion_usuarios.
+- [ ] **T-02** — Proveer soporte de datos para usuarios en Facade/Repositorio sin SQL en la UI.
+  - Criterio de aceptación: La capa de aplicación soporta listar, crear y actualizar usuarios.
   - Estado: pendiente
-- [ ] **T-03** — Crear la carpeta `modulos/gestion_usuarios/` y su archivo `ui.py`.
-  - Criterio de aceptación: Lógica visual extraída, 0% SQL.
+- [ ] **T-03** — Crear el paquete `modulos/gestion_usuarios/` con `ui.py` y `__init__.py`.
+  - Criterio de aceptación: Lógica visual extraída con `render_gestion_usuarios()`, cero SQL.
   - Estado: pendiente
-- [ ] **T-04** — Crear página principal en `pages/`.
-  - Criterio de aceptación: Importa `render_page()` desde el nuevo módulo.
+- [ ] **T-04** — Actualizar `pages/1_Configuracion.py`.
+  - Criterio de aceptación: Importa y ejecuta `render_gestion_usuarios()`, eliminando `exec(open(...))` de la pestaña 1.
   - Estado: pendiente
-- [ ] **T-05** — Borrar archivo residual de la carpeta heredada `modulos/`.
-  - Criterio de aceptación: `1_Gestion_Usuarios.py` eliminado.
+- [ ] **T-05** — Pruebas unitarias en `tests/test_gestion_usuarios.py`.
+  - Criterio de aceptación: `make test` pasa 100% en verde.
   - Estado: pendiente
 
 ## Progreso
 
 | Tarea | Estado | Commit |
 |-------|--------|--------|
-| T-01  | ✅     | N/A    |
-| T-02  | ⏳     |        |
-| T-03  | ⏳     |        |
-| T-04  | ⏳     |        |
-| T-05  | ⏳     |        |
+| T-01  | hecho  | N/A    |
+| T-02  | pendiente |        |
+| T-03  | pendiente |        |
+| T-04  | pendiente |        |
+| T-05  | pendiente |        |
 
 ---
 

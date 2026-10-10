@@ -8,31 +8,32 @@
 
 ## 1. Enfoque
 
-Refactorizar el módulo gestion_usuarios para integrarlo al patrón Facade. De esta manera, aseguramos la separación de capas funciona de punta a punta.
+Refactorizar el módulo de gestión de usuarios extrayéndolo a `src/certificado_operadores/modulos/gestion_usuarios/ui.py` y conectándolo directamente a través de una función limpia invocada por la página `src/certificado_operadores/pages/1_Configuracion.py`, eliminando la ejecución dinámica por `exec`.
 
 ## 2. Arquitectura y capas
 
 ```text
-UI (Streamlit `pages/`)  →  Módulo (`modulos/gestion_usuarios/ui.py`)  →  Facade Correspondiente  →  Infraestructura
+UI (Streamlit `pages/1_Configuracion.py`)  →  Pestaña (`modulos/gestion_usuarios/ui.py`)  →  Facade / Repositorio  →  BD
 ```
 
-La página principal en `pages/` solo invocará una función de renderizado `render_page()` desde la carpeta exclusiva del módulo.
+La página de configuración solo importa `render_gestion_usuarios` y la renderiza dentro de su correspondiente pestaña.
 
 ## 3. Archivos afectados
 
 | Archivo | Acción (crear/modificar) | Nota |
 |---------|--------------------------|------|
-| `src/certificado_operadores/modulos/gestion_usuarios/ui.py` | crear | Funciones únicas de interfaz |
-| `src/certificado_operadores/modulos/gestion_usuarios/__init__.py` | crear | Definición de módulo de Python |
-| `src/certificado_operadores/pages/1_Gestion_Usuarios_Refactor.py` | crear/modificar | Punto de entrada de Streamlit |
-| `src/certificado_operadores/modulos/1_Gestion_Usuarios.py` | eliminar | Archivo obsoleto |
+| `src/certificado_operadores/modulos/gestion_usuarios/ui.py` | crear | Lógica de interfaz de gestión de usuarios |
+| `src/certificado_operadores/modulos/gestion_usuarios/__init__.py` | crear | Exporta `render_gestion_usuarios` |
+| `src/certificado_operadores/pages/1_Configuracion.py` | modificar | Reemplaza `exec(...)` de pestaña 1 por importación limpia |
+| `tests/test_gestion_usuarios.py` | crear | Pruebas unitarias para gestión de usuarios |
 
 ## 4. Orden de implementación
 
-1. Analizar los requerimientos de datos de `1_Gestion_Usuarios.py`.
-2. Extender las capas inferiores (Facade/Repositorio) si se requieren nuevos métodos de acceso a datos.
-3. Extraer la vista a `modulos/gestion_usuarios/ui.py` conectada al Facade.
-4. Crear el punto de entrada en `pages/` y eliminar el archivo heredado.
+1. Crear el paquete `src/certificado_operadores/modulos/gestion_usuarios/` con `ui.py` y `__init__.py`.
+2. Encapsular las operaciones de lectura y mutación de usuarios fuera de la vista.
+3. Actualizar `src/certificado_operadores/pages/1_Configuracion.py` para llamar `render_gestion_usuarios()`.
+4. Implementar pruebas unitarias en `tests/test_gestion_usuarios.py`.
+5. Validar con `uv run pytest` y `make check`.
 
 ---
 
