@@ -1,4 +1,4 @@
-"""Estilos visuales institucionales de Metrocali (spec 023).
+"""Estilos visuales institucionales de Metrocali (specs 023 y 024).
 
 Capa de presentación pura: centraliza la paleta clara y moderna del portal
 oficial ``metrocali.gov.co`` —fondo blanco ``#FFFFFF``, fondos suaves
@@ -49,11 +49,14 @@ _DIRECTORIO_ASSETS = Path(__file__).resolve().parents[2] / "assets"
 
 _CSS_METROCALI = f"""
 <style>
-    /* Reduce los márgenes superiores excesivos del contenedor principal. */
+    /* Contenedor principal a ancho fluido (spec 024): sin tope de anchura y con
+       un padding horizontal equilibrado para aprovechar toda la pantalla. */
     .block-container {{
         padding-top: 2.5rem;
         padding-bottom: 2rem;
-        max-width: 1200px;
+        padding-left: 2.5rem;
+        padding-right: 2.5rem;
+        max-width: none;
     }}
 
     /* Subtítulos descriptivos en gris neutro (jerarquía tipográfica limpia). */

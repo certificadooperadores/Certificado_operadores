@@ -1,12 +1,16 @@
-"""Interfaz Streamlit de reportes y exportaciones (specs 010 y 023).
+"""Interfaz Streamlit de reportes y exportaciones (specs 010, 023 y 024).
 
 Capa de presentación pura: selecciona el reporte, captura los filtros en una
-**barra horizontal compacta** y muestra los resultados con tarjetas de KPI, un
-gráfico de barras nativo y sus botones de descarga. Delega **todo** el acceso a
+**barra horizontal compacta** y muestra los resultados con **KPIs de negocio
+inteligentes por tipo de reporte**, los **botones de exportación en la cabecera**
+(sobre la tabla) y, para los reportes de vencimiento, un **diagrama de Gantt
+temporal por concesionario** generado con matplotlib. Delega **todo** el acceso a
 datos (catálogos de filtros, consultas consolidadas y auditoría) en
 :class:`~certificado_operadores.infra.reportes_repository.ReportesRepository` y la
 generación de archivos en las funciones puras ``generar_excel``/``generar_csv``.
-No contiene sentencias de base de datos ni conoce el motor ni el esquema.
+No contiene sentencias de base de datos ni conoce el motor ni el esquema, y
+**nunca suma identificadores** (códigos, cédulas o IDs) ni muestra la tarjeta de
+``Columnas``.
 
 Autor: Ing. Miguel Angel Ortiz Roldan
 """
@@ -20,6 +24,7 @@ from typing import Any
 
 import pandas as pd
 import streamlit as st
+from matplotlib.figure import Figure
 
 # --- Ajuste de ruta de importación -------------------------------------------
 # Streamlit agrega al ``sys.path`` la carpeta del script principal
@@ -78,26 +83,21 @@ PESO_FILTRO = 2.0
 PESO_BOTON = 1.0
 """Ancho relativo de la columna del botón de filtrado."""
 
-LIMITE_GRAFICO = 15
-"""Máximo de categorías mostradas en el gráfico de barras nativo."""
+# --- Criticidad de vencimientos (spec 024, R-03 y R-07) ---------------------
+DIAS_CRITICO = 30
+"""Umbral de días para marcar un vencimiento como crítico (menos de 30 días)."""
 
-COLUMNA_CATEGORIA = "Categoria"
-"""Nombre de la columna categórica de la agregación del gráfico."""
+DIAS_ALERTA = 60
+"""Umbral de días para marcar un vencimiento como alerta (entre 30 y 60 días)."""
 
-COLUMNA_VALOR = "Total"
-"""Nombre de la columna numérica de la agregación del gráfico."""
+COLOR_CRITICO = "#EF4444"
+"""Rojo del semáforo: vence en menos de 30 días."""
 
-COLUMNAS_TOTAL: tuple[str, ...] = ("Total", "Codigos", "Registros")
-"""Columnas numéricas preferidas como valor del gráfico de barras."""
+COLOR_ALERTA = "#F59E0B"
+"""Ámbar del semáforo: vence entre 30 y 60 días."""
 
-TITULO_KPI_REGISTROS = "Registros"
-"""Rótulo de la tarjeta métrica con el total de registros."""
-
-TITULO_KPI_COLUMNAS = "Columnas"
-"""Rótulo de la tarjeta métrica con el número de columnas."""
-
-TITULO_GRAFICO = "Distribución"
-"""Rótulo del gráfico de barras nativo."""
+# Identificadores de los reportes de vencimiento que llevan diagrama de Gantt.
+_REPORTES_GANTT = ("licencias_vencer", "certificados_vencer")
 
 CLAVE_REPORTE = "sel_reporte"
 """Clave de sesión del selector de reporte."""
@@ -133,43 +133,143 @@ def pesos_toolbar(numero_filtros: int) -> list[float]:
     return [PESO_FILTRO] * numero_filtros + [PESO_BOTON]
 
 
-def construir_agregacion(df: pd.DataFrame, limite: int = LIMITE_GRAFICO) -> pd.DataFrame:
-    """Construye la serie agregada que alimenta el gráfico de barras nativo.
+def color_criticidad(dias: int | float) -> str:
+    """Devuelve el color del semáforo según los días restantes al vencimiento.
 
-    Función pura (sin Streamlit) que agrupa el resultado del reporte por su
-    primera columna categórica: si existe una columna numérica usa su suma; en
-    caso contrario cuenta las ocurrencias. Ordena de mayor a menor y recorta al
-    ``limite`` para mantener el gráfico liviano (<2 ms sobre agregaciones en
-    memoria).
+    Aplica los umbrales de la spec 024 (R-07): menos de
+    :data:`DIAS_CRITICO` días es crítico (rojo), entre :data:`DIAS_CRITICO` y
+    :data:`DIAS_ALERTA` es alerta (ámbar) y más de :data:`DIAS_ALERTA` es normal
+    (azul institucional).
 
     Args:
-        df: Datos del reporte ya ejecutado.
-        limite: Máximo de categorías a incluir.
+        dias: Días restantes para el vencimiento (negativos = ya vencido).
 
     Returns:
-        Un ``DataFrame`` de dos columnas (:data:`COLUMNA_CATEGORIA` y
-        :data:`COLUMNA_VALOR`) listo para :func:`streamlit.bar_chart`; vacío si
-        no hay datos.
+        El color hexadecimal correspondiente a la criticidad.
     """
-    if df is None or df.empty or df.columns.empty:
-        return pd.DataFrame(columns=[COLUMNA_CATEGORIA, COLUMNA_VALOR])
-    categorica = df.columns[0]
-    numericas = [columna for columna in df.columns if pd.api.types.is_numeric_dtype(df[columna])]
-    columna_valor = next(
-        (nombre for nombre in COLUMNAS_TOTAL if nombre in numericas),
-        numericas[-1] if numericas else None,
-    )
-    if columna_valor is not None:
-        serie = df.groupby(categorica, dropna=False)[columna_valor].sum()
-    else:
-        serie = df[categorica].value_counts(dropna=False)
-    serie = serie.sort_values(ascending=False).head(limite)
-    return pd.DataFrame(
-        {
-            COLUMNA_CATEGORIA: [str(indice) for indice in serie.index],
-            COLUMNA_VALOR: serie.to_numpy(),
-        }
-    )
+    if dias < DIAS_CRITICO:
+        return COLOR_CRITICO
+    if dias <= DIAS_ALERTA:
+        return COLOR_ALERTA
+    return COLOR_PRIMARIO
+
+
+def _determinacion_pendiente(valor: object) -> bool:
+    """Indica si una determinación está pendiente (vacía o ``Pendiente``).
+
+    Args:
+        valor: Valor de la columna ``Determinacion`` de una reincidencia.
+
+    Returns:
+        ``True`` si el valor es ``None``, cadena vacía o ``Pendiente``.
+    """
+    if valor is None or pd.isna(valor):
+        return True
+    texto = str(valor).strip()
+    return texto == "" or texto.casefold() == "pendiente"
+
+
+def calcular_kpis(id_reporte: str, df: pd.DataFrame) -> list[tuple[str, int]]:
+    """Calcula las métricas de negocio del reporte (prohibido sumar identificadores).
+
+    Cada reporte expone KPIs que aportan valor de decisión: totales, conteos de
+    criticidad, concesionarios involucrados, operadores únicos, vehículos o rutas.
+    **Nunca** suma códigos, cédulas ni IDs, y **no** cuenta columnas.
+
+    Args:
+        id_reporte: Identificador estable del reporte.
+        df: Datos del reporte ya ejecutado.
+
+    Returns:
+        Lista de pares ``(etiqueta, valor)`` listos para ``st.metric``.
+    """
+    if df is None or df.empty:
+        return []
+    if id_reporte == "utryt":
+        return [("Total Operadores", len(df))]
+    if id_reporte == "licencias_vencer":
+        criticas = int((df["Dias Restantes"] <= DIAS_CRITICO).sum())
+        concesionarios = int(df["Empresa"].nunique()) if "Empresa" in df.columns else 0
+        return [
+            ("Total por Vencer", len(df)),
+            ("Críticas (< 30 días)", criticas),
+            ("Concesionarios", concesionarios),
+        ]
+    if id_reporte in ("certificados_vencer", "certificados_vencidos"):
+        columna_dias = "Dias Restantes" if id_reporte == "certificados_vencer" else "Dias Vencido"
+        etiqueta = (
+            "Próximos a Vencer (< 30 días)" if id_reporte == "certificados_vencer" else "Críticos"
+        )
+        criticos = int((df[columna_dias] <= DIAS_CRITICO).sum())
+        operadores = int(df["Codigo"].nunique())
+        return [
+            ("Total Certificados", len(df)),
+            (etiqueta, criticos),
+            ("Operadores Únicos", operadores),
+        ]
+    if id_reporte == "operadores_empresa":
+        total = int(df["Codigos"].sum())
+        concesionarios = int(df["Empresa"].nunique())
+        return [
+            ("Total Operadores Activos", total),
+            ("Concesionarios Activos", concesionarios),
+        ]
+    if id_reporte == "reincidencias":
+        pendientes = int(df["Determinacion"].apply(_determinacion_pendiente).sum())
+        graves = int((df["Impacto"] == "Grave").sum())
+        return [
+            ("Total Casos", len(df)),
+            ("Pendientes de Determinación", pendientes),
+            ("Casos Graves", graves),
+        ]
+    if id_reporte == "comportamientos_operador":
+        vehiculos = int(df["Vehiculo"].nunique()) if "Vehiculo" in df.columns else 0
+        rutas = int(df["Ruta"].nunique()) if "Ruta" in df.columns else 0
+        return [
+            ("Total Novedades", len(df)),
+            ("Vehículos Involucrados", vehiculos),
+            ("Rutas Afectadas", rutas),
+        ]
+    # Resto de reportes operacionales (p. ej. eventos por tipo): total simple.
+    return [("Registros", len(df))]
+
+
+def generar_gantt_vencimientos(df: pd.DataFrame) -> Figure:
+    """Genera el diagrama de Gantt de vencimientos por concesionario (spec 024).
+
+    Cada fila del resultado (licencia o certificado) se dibuja como una barra
+    horizontal en el eje del concesionario al que pertenece, con longitud igual a
+    sus días restantes y color según su criticidad (:func:`color_criticidad`).
+    Permite ver de un vistazo el cronograma de vencimientos en el tiempo.
+
+    Args:
+        df: Datos del reporte con, al menos, las columnas ``Empresa`` y
+            ``Dias Restantes``.
+
+    Returns:
+        La figura de matplotlib lista para ``st.pyplot`` (sin ejes si no hay datos).
+    """
+    figura = Figure(figsize=(10, 3))
+    ejes = figura.subplots()
+    if df is None or df.empty or "Empresa" not in df.columns or "Dias Restantes" not in df.columns:
+        ejes.axis("off")
+        return figura
+
+    filas = df.copy()
+    filas["Empresa"] = filas["Empresa"].fillna("Sin Concesionario").astype(str)
+    empresas = list(dict.fromkeys(filas["Empresa"]))
+    dias = filas["Dias Restantes"].astype(float).tolist()
+    colores = [color_criticidad(dia) for dia in dias]
+    posiciones = [empresas.index(empresa) for empresa in filas["Empresa"]]
+
+    ejes.barh(posiciones, dias, height=0.5, color=colores)
+    ejes.set_yticks(range(len(empresas)))
+    ejes.set_yticklabels(empresas)
+    ejes.set_xlabel("Días restantes para el vencimiento")
+    ejes.set_title("Vencimientos por concesionario")
+    ejes.invert_yaxis()
+    figura.tight_layout()
+    return figura
 
 
 def _render_filtro(
@@ -318,66 +418,28 @@ def _construir_seleccion(
     return SeleccionFiltros(**valores), ejecutar
 
 
-def _render_kpis(df: pd.DataFrame) -> None:
-    """Muestra las tarjetas métricas ejecutivas del resultado.
+def _render_kpis(df: pd.DataFrame, definicion: DefinicionReporte) -> None:
+    """Muestra las tarjetas métricas de negocio del reporte.
 
     Args:
         df: Datos del reporte ya ejecutado.
+        definicion: Reporte mostrado (define qué KPIs aplican).
     """
-    numericas = [columna for columna in df.columns if pd.api.types.is_numeric_dtype(df[columna])]
-    col_registros, col_total, col_columnas = st.columns(3)
-    with col_registros:
-        st.metric(TITULO_KPI_REGISTROS, len(df))
-    with col_total:
-        etiqueta = numericas[0] if numericas else TITULO_KPI_COLUMNAS
-        valor = int(df[numericas[0]].sum()) if numericas else len(df.columns)
-        st.metric(etiqueta, valor)
-    with col_columnas:
-        st.metric(TITULO_KPI_COLUMNAS, len(df.columns))
+    kpis = calcular_kpis(definicion.id, df)
+    if not kpis:
+        return
+    columnas = st.columns(len(kpis))
+    for columna, (etiqueta, valor) in zip(columnas, kpis, strict=True):
+        columna.metric(etiqueta, valor)
 
 
-def _render_grafico(df: pd.DataFrame) -> None:
-    """Dibuja el gráfico de barras horizontal nativo de la agregación.
+def _render_exportacion(df: pd.DataFrame, definicion: DefinicionReporte) -> None:
+    """Muestra los botones de exportación en la cabecera, sobre la tabla.
 
     Args:
         df: Datos del reporte ya ejecutado.
+        definicion: Reporte mostrado (nombra los archivos descargados).
     """
-    agregacion = construir_agregacion(df)
-    if agregacion.empty:
-        return
-    st.markdown(f"**{TITULO_GRAFICO}**")
-    st.bar_chart(
-        agregacion,
-        x=COLUMNA_CATEGORIA,
-        y=COLUMNA_VALOR,
-        horizontal=True,
-        color=COLOR_PRIMARIO,
-    )
-
-
-def _render_resultado(
-    df: pd.DataFrame | None,
-    definicion: DefinicionReporte,
-    repositorio: ReportesRepository,
-    usuario: str,
-) -> None:
-    """Muestra KPIs, tabla, gráfico y botones de exportación del reporte.
-
-    Args:
-        df: Datos del reporte (``None`` si aún no se ha ejecutado).
-        definicion: Reporte mostrado.
-        repositorio: Repositorio inyectado, usado para auditar la exportación.
-        usuario: Usuario de la sesión (para auditoría).
-    """
-    if df is None:
-        return
-    if df.empty:
-        st.info(MENSAJE_SIN_RESULTADOS)
-        return
-    _render_kpis(df)
-    st.dataframe(df, use_container_width=True, hide_index=True)
-    _render_grafico(df)
-
     col_excel, col_csv = st.columns(2)
     with col_excel:
         st.download_button(
@@ -395,11 +457,52 @@ def _render_resultado(
             mime=TIPO_MIME_CSV,
             key=f"exp_csv_{definicion.id}",
         )
+
+
+def _render_gantt(df: pd.DataFrame, definicion: DefinicionReporte) -> None:
+    """Dibuja el diagrama de Gantt de vencimientos, solo para reportes de vencimiento.
+
+    Args:
+        df: Datos del reporte ya ejecutado.
+        definicion: Reporte mostrado (define si aplica el Gantt).
+    """
+    if definicion.id not in _REPORTES_GANTT:
+        return
+    st.pyplot(generar_gantt_vencimientos(df))
+
+
+def _render_resultado(
+    df: pd.DataFrame | None,
+    definicion: DefinicionReporte,
+    repositorio: ReportesRepository,
+    usuario: str,
+) -> None:
+    """Muestra KPIs, botones de exportación, tabla y Gantt del reporte.
+
+    El orden respeta la spec 024: los botones de exportación quedan en la
+    cabecera, directamente encima de la tabla, para que el usuario no tenga que
+    desplazarse. No se renderizan gráficos de barras por código individual.
+
+    Args:
+        df: Datos del reporte (``None`` si aún no se ha ejecutado).
+        definicion: Reporte mostrado.
+        repositorio: Repositorio inyectado, usado para auditar la exportación.
+        usuario: Usuario de la sesión (para auditoría).
+    """
+    if df is None:
+        return
+    if df.empty:
+        st.info(MENSAJE_SIN_RESULTADOS)
+        return
+    _render_kpis(df, definicion)
+    _render_exportacion(df, definicion)
+    st.dataframe(df, use_container_width=True, hide_index=True)
+    _render_gantt(df, definicion)
     repositorio.registrar_exportacion(usuario, definicion.nombre, len(df))
 
 
 def render_reportes(repositorio: ReportesRepository | None = None) -> None:
-    """Renderiza la vista completa de reportes y exportaciones (specs 010 y 023).
+    """Renderiza la vista completa de reportes y exportaciones (specs 010, 023 y 024).
 
     Args:
         repositorio: Repositorio de reportes a usar. Si es ``None`` se construye
@@ -431,13 +534,19 @@ def render_reportes(repositorio: ReportesRepository | None = None) -> None:
 
 
 __all__ = [
+    "COLOR_ALERTA",
+    "COLOR_CRITICO",
+    "DIAS_ALERTA",
+    "DIAS_CRITICO",
     "MENSAJE_SIN_RESULTADOS",
     "OPCION_TODAS",
     "OPCION_TODOS",
     "PROPORCIONES_TOOLBAR",
     "TITULO",
     "USUARIO_POR_DEFECTO",
-    "construir_agregacion",
+    "calcular_kpis",
+    "color_criticidad",
+    "generar_gantt_vencimientos",
     "parsear_entero",
     "pesos_toolbar",
     "render_reportes",

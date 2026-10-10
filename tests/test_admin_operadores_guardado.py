@@ -194,6 +194,38 @@ def test_existe_operador_vigente(fachada: OperadoresFacade) -> None:
     assert fachada._repositorio.existe_operador_vigente(9999) is False
 
 
+# --- Generación de códigos por concesionario (spec 024, R-08) ----------------
+def test_siguiente_codigo_por_concesionario(fachada: OperadoresFacade) -> None:
+    """R-08/CA-09: cada concesionario arranca en su base ``id_empresa * 10000``."""
+    # Arrange
+    repositorio = fachada._repositorio
+
+    # Act / Assert
+    assert repositorio.siguiente_codigo(1) == 10001
+    assert repositorio.siguiente_codigo(2) == 20001
+    assert repositorio.siguiente_codigo(3) == 30001
+    assert repositorio.siguiente_codigo(4) == 40001
+
+
+def test_siguiente_codigo_respeta_el_maximo_del_rango(
+    fachada: OperadoresFacade, motor_sqlite: Engine
+) -> None:
+    """R-08: el siguiente código respeta el máximo ya asignado dentro del rango."""
+    # Arrange
+    with motor_sqlite.begin() as conexion:
+        conexion.execute(
+            text(
+                "INSERT INTO dim_codigo (id_codigo, id_persona, id_empresa, "
+                "id_perfil_tipologia, id_vigencia) VALUES (10005, 1001, 1, 1, 1)"
+            )
+        )
+
+    # Act / Assert
+    assert fachada._repositorio.siguiente_codigo(1) == 10006
+    # El rango del concesionario 2 no se ve afectado por los códigos del 1.
+    assert fachada._repositorio.siguiente_codigo(2) == 20001
+
+
 # --- guardar_operador --------------------------------------------------------
 def test_guardar_operador_crea_el_registro(fachada: OperadoresFacade, motor_sqlite: Engine) -> None:
     """Un operador nuevo se persiste y se audita en una sola operación."""
@@ -206,7 +238,7 @@ def test_guardar_operador_crea_el_registro(fachada: OperadoresFacade, motor_sqli
     # Assert
     assert resultado.exito is True
     assert resultado.mensaje == MENSAJE_OPERADOR_CREADO
-    assert resultado.codigo == 5003
+    assert resultado.codigo == 10001
     assert _filas(
         motor_sqlite,
         "SELECT id_persona, nombres, primer_apellido, segundo_apellido, genero "
@@ -216,7 +248,7 @@ def test_guardar_operador_crea_el_registro(fachada: OperadoresFacade, motor_sqli
         motor_sqlite,
         "SELECT id_codigo, id_empresa, id_perfil_tipologia, id_vigencia "
         "FROM dim_codigo WHERE id_persona = 9999",
-    ) == [(5003, 1, 2, 1)]
+    ) == [(10001, 1, 2, 1)]
     assert _filas(motor_sqlite, "SELECT usuario, accion FROM log_auditoria") == [
         ("admin", "CREAR_OPERADOR")
     ]

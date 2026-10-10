@@ -21,6 +21,8 @@ from pathlib import Path
 
 import pandas as pd
 import pytest
+from matplotlib.colors import same_color
+from matplotlib.figure import Figure
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.pool import NullPool
@@ -558,14 +560,14 @@ def test_construir_consulta() -> None:
 
 
 def test_ejecutar_reporte_operadores_empresa(repositorio: ReportesRepository) -> None:
-    """RF-02: se ejecuta el reporte y se filtran las filas por empresa."""
+    """RF-02/CA-07: el reporte proyecta el nombre legible de la tipología."""
     # Arrange / Act
     resultado = repositorio.ejecutar_reporte("operadores_empresa", SeleccionFiltros(empresa=1))
 
     # Assert
     assert list(resultado.columns) == ["Empresa", "Tipologia", "Codigos"]
     assert resultado.to_dict(orient="records") == [
-        {"Empresa": "Empresa A", "Tipologia": 1, "Codigos": 2}
+        {"Empresa": "Empresa A", "Tipologia": "Articulado, Padron", "Codigos": 2}
     ]
 
 
@@ -603,6 +605,38 @@ def test_ejecutar_reporte_reincidencias(repositorio: ReportesRepository) -> None
     # Assert
     assert resultado["Reincidencia"].tolist() == [1]
     assert resultado["Determinacion"].tolist() == ["advertencia"]
+
+
+def test_reincidencias_resuelve_empresa_por_prefijo_cot(
+    repositorio: ReportesRepository, motor_sqlite: Engine
+) -> None:
+    """R-05/CA-06: códigos genéricos resuelven la Empresa por su prefijo COT."""
+    # Arrange
+    with motor_sqlite.begin() as conexion:
+        conexion.execute(
+            text(
+                "INSERT INTO fact_reincidencia (id_reincidencia, id_codigo, id_impacto, "
+                "id_comportamiento, fecha_inicio, fecha_fin, determinacion_mc) "
+                "VALUES (2, 20000, 2, 10, '2026-01-01', '2026-01-02', '')"
+            )
+        )
+
+    # Act
+    resultado = repositorio.ejecutar_reporte("reincidencias", SeleccionFiltros())
+
+    # Assert
+    empresas = resultado.set_index("Reincidencia")["Empresa"].to_dict()
+    assert empresas[2] == "Bnm"
+    assert all(empresa is not None for empresa in resultado["Empresa"])
+
+
+def test_reincidencias_incluye_filtro_de_fechas(repositorio: ReportesRepository) -> None:
+    """R-05/CA-06: reincidencias expone un filtro de rango de fechas."""
+    # Arrange / Act
+    definicion = next(d for d in repositorio.listar_reportes() if d.id == "reincidencias")
+
+    # Assert
+    assert "fecha" in [filtro.tipo for filtro in definicion.filtros]
 
 
 @pytest.mark.parametrize("id_reporte", _IDS_REPORTES)
@@ -651,6 +685,30 @@ def test_ejecutar_reporte_certificados_vencidos(repositorio: ReportesRepository)
     # Assert
     assert resultado["Codigo"].tolist() == [2002]
     assert resultado["Dias Vencido"].tolist()[0] > 0
+
+
+def test_vencimientos_incluyen_filtro_de_concesionario(
+    repositorio: ReportesRepository,
+) -> None:
+    """R-07/CA-08: licencias y certificados por vencer filtran por concesionario."""
+    # Arrange / Act
+    for id_reporte in ("licencias_vencer", "certificados_vencer"):
+        definicion = next(d for d in repositorio.listar_reportes() if d.id == id_reporte)
+
+        # Assert
+        assert "empresa" in [filtro.tipo for filtro in definicion.filtros]
+        assert "Empresa" in definicion.columnas
+
+
+def test_licencias_vencer_proyecta_y_filtra_empresa(repositorio: ReportesRepository) -> None:
+    """R-07: la licencia por vencer proyecta su concesionario y lo filtra."""
+    # Arrange / Act
+    resultado = repositorio.ejecutar_reporte("licencias_vencer", SeleccionFiltros(empresa=1))
+    sin_resultados = repositorio.ejecutar_reporte("licencias_vencer", SeleccionFiltros(empresa=2))
+
+    # Assert
+    assert resultado["Empresa"].tolist() == ["Empresa A"]
+    assert sin_resultados.empty
 
 
 # --- RF-03: exportaciones y auditoría ----------------------------------------
@@ -752,57 +810,101 @@ def test_pagina_compila_sin_errores_de_sintaxis() -> None:
     compile(contenido, str(_RUTA_PAGINA), "exec")
 
 
-# --- Spec 023: toolbar horizontal, KPIs y gráfico liviano --------------------
-def test_construir_agregacion_usa_la_columna_total() -> None:
-    """La agregación prefiere la columna de totales cuando existe."""
+# --- Spec 024: criticidad, KPIs de negocio y Gantt de vencimientos ----------
+def test_color_criticidad_por_umbrales() -> None:
+    """R-07: la criticidad se traduce a rojo, ámbar y azul institucional."""
+    # Arrange / Act / Assert
+    assert ui.color_criticidad(29) == ui.COLOR_CRITICO
+    assert ui.color_criticidad(30) == ui.COLOR_ALERTA
+    assert ui.color_criticidad(60) == ui.COLOR_ALERTA
+    assert ui.color_criticidad(61) == ui.COLOR_PRIMARIO
+
+
+def test_calcular_kpis_utryt_solo_total() -> None:
+    """R-03/CA-02: UTRyT muestra solo el total de operadores, sin tarjetas raras."""
     # Arrange
-    df = pd.DataFrame({"Empresa": ["A", "B", "A"], "Tipologia": [1, 2, 1], "Codigos": [2, 5, 3]})
+    df = pd.DataFrame({"METROCALI ID": [1, 2, 3]})
 
     # Act
-    agregacion = ui.construir_agregacion(df)
+    kpis = ui.calcular_kpis("utryt", df)
 
     # Assert
-    assert list(agregacion.columns) == [ui.COLUMNA_CATEGORIA, ui.COLUMNA_VALOR]
-    assert set(zip(agregacion["Categoria"], agregacion["Total"], strict=True)) == {
-        ("A", 5),
-        ("B", 5),
+    assert kpis == [("Total Operadores", 3)]
+
+
+def test_calcular_kpis_licencias_vencer() -> None:
+    """R-03: licencias por vencer cuenta críticas y concesionarios involucrados."""
+    # Arrange
+    df = pd.DataFrame({"Empresa": ["Git", "Git", "Bnm"], "Dias Restantes": [10, 45, 90]})
+
+    # Act
+    kpis = ui.calcular_kpis("licencias_vencer", df)
+
+    # Assert
+    assert dict(kpis) == {
+        "Total por Vencer": 3,
+        "Críticas (< 30 días)": 1,
+        "Concesionarios": 2,
     }
 
 
-def test_construir_agregacion_cuenta_ocurrencias_sin_numericas() -> None:
-    """Sin columnas numéricas la agregación cuenta las ocurrencias."""
+def test_calcular_kpis_reincidencias() -> None:
+    """R-03: reincidencias cuenta pendientes y casos graves."""
     # Arrange
-    df = pd.DataFrame({"Empresa": ["A", "A", "B"]})
+    df = pd.DataFrame(
+        {"Determinacion": ["advertencia", None, "Pendiente"], "Impacto": ["Grave", "Leve", "Grave"]}
+    )
 
     # Act
-    agregacion = ui.construir_agregacion(df)
+    kpis = ui.calcular_kpis("reincidencias", df)
 
     # Assert
-    assert set(zip(agregacion["Categoria"], agregacion["Total"], strict=True)) == {
-        ("A", 2),
-        ("B", 1),
+    assert dict(kpis) == {
+        "Total Casos": 3,
+        "Pendientes de Determinación": 2,
+        "Casos Graves": 2,
     }
 
 
-def test_construir_agregacion_vacia() -> None:
-    """Un resultado vacío produce una agregación vacía."""
+def test_calcular_kpis_no_suma_identificadores_ni_cuenta_columnas() -> None:
+    """R-03/CA-04: ningún KPI suma códigos ni muestra la tarjeta de Columnas."""
+    # Arrange
+    df = pd.DataFrame({"Codigo": [11016, 11017, 11018]})
+
+    # Act
+    kpis = ui.calcular_kpis("comportamientos_operador", df)
+
+    # Assert
+    etiquetas = [etiqueta for etiqueta, _ in kpis]
+    assert "Columnas" not in etiquetas
+    assert "Codigo" not in etiquetas
+
+
+def test_generar_gantt_vencimientos_colorea_por_criticidad() -> None:
+    """R-07: el Gantt dibuja una barra por fila con el color de su criticidad."""
+    # Arrange
+    df = pd.DataFrame({"Empresa": ["Git", "Bnm", "Etm"], "Dias Restantes": [10, 45, 90]})
+
+    # Act
+    figura = ui.generar_gantt_vencimientos(df)
+
+    # Assert
+    assert isinstance(figura, Figure)
+    ejes = figura.axes[0]
+    assert len(ejes.patches) == 3
+    assert same_color(ejes.patches[0].get_facecolor(), ui.COLOR_CRITICO)
+    assert same_color(ejes.patches[1].get_facecolor(), ui.COLOR_ALERTA)
+    assert same_color(ejes.patches[2].get_facecolor(), ui.COLOR_PRIMARIO)
+
+
+def test_generar_gantt_vencimientos_sin_datos_no_dibuja() -> None:
+    """R-07: sin datos el Gantt no dibuja barras ni falla."""
     # Arrange / Act
-    agregacion = ui.construir_agregacion(pd.DataFrame())
+    figura = ui.generar_gantt_vencimientos(pd.DataFrame())
 
     # Assert
-    assert agregacion.empty
-
-
-def test_construir_agregacion_respeta_el_limite() -> None:
-    """La agregación se recorta al número máximo de categorías."""
-    # Arrange
-    df = pd.DataFrame({"Empresa": [f"E{indice}" for indice in range(30)], "Total": [1] * 30})
-
-    # Act
-    agregacion = ui.construir_agregacion(df, limite=5)
-
-    # Assert
-    assert len(agregacion) == 5
+    assert isinstance(figura, Figure)
+    assert len(figura.axes[0].patches) == 0
 
 
 def test_pesos_toolbar_reparto_de_referencia() -> None:
@@ -812,16 +914,17 @@ def test_pesos_toolbar_reparto_de_referencia() -> None:
     assert ui.pesos_toolbar(1) == [2.0, 1.0]
 
 
-def test_ui_reportes_usa_toolbar_kpis_y_grafico() -> None:
-    """CA-06: la vista agrupa filtros en columnas y muestra KPIs y gráfico."""
+def test_ui_reportes_kpis_exportacion_y_gantt() -> None:
+    """CA-05/CA-03: KPIs, exportación en cabecera y Gantt; sin barras por código."""
     # Arrange
     contenido = _RUTA_UI.read_text(encoding="utf-8")
 
     # Act / Assert
     assert "st.columns(" in contenido
-    assert "st.metric(" in contenido
-    assert "st.bar_chart(" in contenido
-    assert "horizontal=True" in contenido
+    assert ".metric(" in contenido
+    assert "st.download_button(" in contenido
+    assert "st.pyplot(" in contenido
+    assert "st.bar_chart(" not in contenido
 
 
 def test_titulo_reportes_sin_emojis() -> None:

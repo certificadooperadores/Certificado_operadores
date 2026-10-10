@@ -51,6 +51,18 @@ def test_config_declara_la_paleta_clara_oficial() -> None:
         assert color in contenido
 
 
+def test_css_ancho_fluido_sin_max_width() -> None:
+    """CA-01 (spec 024): el contenedor principal no restringe el ancho a 1200px."""
+    # Arrange
+    css = estilos._CSS_METROCALI
+
+    # Act / Assert
+    assert "max-width: none;" in css
+    assert "max-width: 1200px" not in css
+    assert "padding-left: 2.5rem;" in css
+    assert "padding-right: 2.5rem;" in css
+
+
 # --- CA-02: logo institucional ----------------------------------------------
 def test_ruta_logo_por_defecto_apunta_al_asset_oficial() -> None:
     """CA-02: la ruta por defecto es el logo oficial versionado."""

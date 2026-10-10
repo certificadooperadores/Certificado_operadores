@@ -102,6 +102,28 @@ _SUBCONSULTA_CANCELACION = (
     "SELECT id_codigo FROM fact_eventos_operador WHERE id_tipo_evento = :cancelacion"
 )
 
+# --- Nombre legible de tipología (spec 024, R-06) ----------------------------
+# ``dim_perfil_tipologia`` no expone una columna de nombre: la tipología se
+# compone de las autorizaciones habilitadas (articulado, padrón, complementario
+# y auxiliar). Esta expresión concatena, en SQLite, solo las etiquetas activas y
+# recorta la coma final, produciendo un nombre legible (``Articulado, Padron``)
+# en lugar del identificador numérico. No suma ni filtra identificadores.
+_ETIQUETAS_TIPOLOGIA = (
+    "RTRIM("
+    "CASE WHEN t.autoriza_articulado = 1 THEN 'Articulado, ' ELSE '' END || "
+    "CASE WHEN t.autoriza_padron = 1 THEN 'Padron, ' ELSE '' END || "
+    "CASE WHEN t.autoriza_complementario = 1 THEN 'Complementario, ' ELSE '' END || "
+    "CASE WHEN t.autoriza_auxiliar = 1 THEN 'Auxiliar, ' ELSE '' END, "
+    "', ')"
+)
+
+# Columna ``Tipologia`` del reporte: si una tipología no tiene autorizaciones
+# activas (dato residual), se degrada a su identificador en lugar de quedar vacía.
+_COLUMNA_TIPOLOGIA = (
+    f"CASE WHEN {_ETIQUETAS_TIPOLOGIA} = '' "
+    f"THEN CAST(t.id_perfil_tipologia AS TEXT) ELSE {_ETIQUETAS_TIPOLOGIA} END"
+)
+
 
 # --- DTOs públicos -----------------------------------------------------------
 @dataclass(frozen=True)
@@ -308,16 +330,16 @@ _REPORTES: tuple[_Reporte, ...] = (
         nombre="Operadores por Empresa y Tipología",
         descripcion="Conteo de operadores agrupados por empresa y tipología con totales.",
         columnas=("Empresa", "Tipologia", "Codigos"),
-        consulta="""
-            SELECT e.nombre_empresa AS "Empresa", t.id_perfil_tipologia AS "Tipologia",
+        consulta=f"""
+            SELECT e.nombre_empresa AS "Empresa", {_COLUMNA_TIPOLOGIA} AS "Tipologia",
                    COUNT(*) AS "Codigos"
             FROM dim_codigo dc
             LEFT JOIN dim_empresa e ON dc.id_empresa = e.id_empresa
             LEFT JOIN dim_perfil_tipologia t
                 ON dc.id_perfil_tipologia = t.id_perfil_tipologia
             WHERE 1=1
-            GROUP BY e.nombre_empresa, t.id_perfil_tipologia
-            ORDER BY e.nombre_empresa, t.id_perfil_tipologia
+            GROUP BY e.nombre_empresa, {_COLUMNA_TIPOLOGIA}
+            ORDER BY e.nombre_empresa, {_COLUMNA_TIPOLOGIA}
         """,
         filtros=(
             _FiltroReporte("empresa", "dc.id_empresa", "Empresa"),
@@ -333,6 +355,7 @@ _REPORTES: tuple[_Reporte, ...] = (
         nombre="Licencias por Vencer",
         descripcion="Licencias de conducción que vencen en los próximos N días.",
         columnas=(
+            "Empresa",
             "Codigo",
             "Cedula",
             "Nombre",
@@ -341,7 +364,8 @@ _REPORTES: tuple[_Reporte, ...] = (
             "Dias Restantes",
         ),
         consulta="""
-            SELECT l.id_codigo AS "Codigo", c.id_persona AS "Cedula",
+            SELECT e.nombre_empresa AS "Empresa", l.id_codigo AS "Codigo",
+                   c.id_persona AS "Cedula",
                    (p.nombres || ' ' || p.primer_apellido) AS "Nombre",
                    l.tipo AS "Tipo Licencia", DATE(l.vencimiento) AS "Vencimiento",
                    CAST(ROUND(JULIANDAY(l.vencimiento) - JULIANDAY('now')) AS INTEGER)
@@ -349,9 +373,11 @@ _REPORTES: tuple[_Reporte, ...] = (
             FROM fact_licencias l
             LEFT JOIN dim_codigo c ON l.id_codigo = c.id_codigo
             LEFT JOIN dim_persona p ON c.id_persona = p.id_persona
+            LEFT JOIN dim_empresa e ON c.id_empresa = e.id_empresa
             WHERE 1=1 AND l.vencimiento IS NOT NULL
         """,
         filtros=(
+            _FiltroReporte("empresa", "c.id_empresa", "Empresa"),
             _FiltroReporte(
                 "dias_vencer",
                 _COL_VENCIMIENTO_LICENCIA,
@@ -399,7 +425,15 @@ _REPORTES: tuple[_Reporte, ...] = (
         ),
         consulta="""
             SELECT r.id_reincidencia AS "Reincidencia", r.id_codigo AS "Codigo",
-                   e.nombre_empresa AS "Empresa", i.impacto AS "Impacto",
+                   COALESCE(e.nombre_empresa,
+                            CASE CAST(SUBSTR(CAST(r.id_codigo AS TEXT), 1, 1) AS INTEGER)
+                                WHEN 1 THEN 'Git'
+                                WHEN 2 THEN 'Bnm'
+                                WHEN 3 THEN 'Etm'
+                                WHEN 4 THEN 'Unm'
+                                ELSE 'Sin Concesionario'
+                            END) AS "Empresa",
+                   i.impacto AS "Impacto",
                    c.comportamiento AS "Comportamiento", r.fecha_inicio AS "Inicio",
                    r.fecha_fin AS "Fin", r.determinacion_mc AS "Determinacion"
             FROM fact_reincidencia r
@@ -413,6 +447,7 @@ _REPORTES: tuple[_Reporte, ...] = (
         filtros=(
             _FiltroReporte("empresa", "dc.id_empresa", "Empresa"),
             _FiltroReporte("impacto", "r.id_impacto", "Impacto"),
+            _FiltroReporte("fecha", "DATE(r.fecha_inicio)", "Rango de fechas"),
         ),
     ),
     _Reporte(
@@ -454,6 +489,7 @@ _REPORTES: tuple[_Reporte, ...] = (
             "renovación) que vencen en los próximos N días (vigencia 3 años)."
         ),
         columnas=(
+            "Empresa",
             "Codigo",
             "Cedula",
             "Nombre",
@@ -463,7 +499,8 @@ _REPORTES: tuple[_Reporte, ...] = (
             "Dias Restantes",
         ),
         consulta=f"""
-            SELECT e.id_codigo AS "Codigo", c.id_persona AS "Cedula",
+            SELECT em.nombre_empresa AS "Empresa", e.id_codigo AS "Codigo",
+                   c.id_persona AS "Cedula",
                    (p.nombres || ' ' || p.primer_apellido) AS "Nombre",
                    te.nombre_evento AS "Ultimo Evento",
                    DATE(e.fecha_certificado) AS "Fecha Certificado",
@@ -474,10 +511,12 @@ _REPORTES: tuple[_Reporte, ...] = (
             LEFT JOIN dim_codigo c ON e.id_codigo = c.id_codigo
             LEFT JOIN dim_persona p ON c.id_persona = p.id_persona
             LEFT JOIN dim_tipo_evento te ON e.id_tipo_evento = te.id_tipo_evento
+            LEFT JOIN dim_empresa em ON c.id_empresa = em.id_empresa
             WHERE 1=1 AND e.rn = 1 AND c.id_codigo NOT IN (
                 SELECT id_codigo FROM fact_eventos_operador WHERE id_tipo_evento = 7)
         """,
         filtros=(
+            _FiltroReporte("empresa", "c.id_empresa", "Empresa"),
             _FiltroReporte(
                 "dias_vencer",
                 _COL_VENCIMIENTO_CERTIFICADO,

@@ -80,9 +80,15 @@ guardado de operadores: `MENSAJE_OPERADOR_CREADO`, `MENSAJE_OPERADOR_DUPLICADO`,
 | `OperadoresRepository.listar_empresas` | `() -> list[EmpresaInfo]` | Spec 023: empresas concesionarias oficiales para el desplegable. | `list[EmpresaInfo]` |
 | `OperadoresRepository.listar_tipologias` | `() -> list[TipologiaInfo]` | Spec 023: tipologías de bus oficiales con su descripción. | `list[TipologiaInfo]` |
 | `OperadoresRepository.existe_operador_vigente` | `(cedula: int) -> bool` | Spec 023: indica si la cédula ya tiene un código vigente. | `bool` |
-| `OperadoresRepository.crear_operador` | `(registro: RegistroOperador, usuario: str = "") -> int` | Spec 023: persiste persona y código, y audita en una sola transacción. | `int` |
+| `OperadoresRepository.siguiente_codigo` | `(id_empresa: int) -> int` | Spec 024: siguiente código dentro del rango del concesionario (`id_empresa * 10000`). | `int` |
+| `OperadoresRepository._siguiente_codigo` | `(conexion: Connection, id_empresa: int) -> int` | Spec 024: resuelve el código sobre una conexión ya abierta (atómicamente). | `int` |
+| `OperadoresRepository.crear_operador` | `(registro: RegistroOperador, usuario: str = "") -> int` | Spec 023/024: persiste persona y código (según el patrón COT), y audita en una sola transacción. | `int` |
 | `OperadoresRepository._consultar_operador` | `(sentencia: TextClause, parametros: dict[str, int]) -> OperadorInfo \| None` | Ejecuta la consulta de operador y mapea la fila al DTO. | `OperadorInfo` o `None` |
 | `_contar` | `(conexion: Connection, sentencia: TextClause, parametros: dict[str, int] \| None = None) -> int` | Ejecuta un `COUNT(*)` de forma segura. | `int` |
+
+La spec 024 añade la constante `BASE_CODIGO_CONCESIONARIO` (10000) que define los
+rangos numéricos por concesionario: GIT (1) 10001-19999, ByN (2) 20001-29999, ETM
+(3) 30001-39999 y Unimetro (4) 40001-49999.
 
 ### Módulo `facade` — `src/certificado_operadores/facade.py`
 
@@ -150,11 +156,13 @@ Punto de entrada: `src/certificado_operadores/pages/2_Administracion_Operadores.
 
 ### Módulo `estilos` — `src/certificado_operadores/estilos.py`
 
-Estilos visuales institucionales de Metrocali (spec 023). Capa de presentación
-pura que centraliza la paleta clara oficial (azul `#046BD2`, fondo `#FFFFFF`,
-fondo suave `#F8FAFC`, texto `#111827` y borde `#E5E7EB`), inyecta el CSS de
-márgenes, tarjetas y pestañas, y publica el logo oficial en la barra lateral. No
-accede a la base de datos.
+Estilos visuales institucionales de Metrocali (specs 023 y 024). Capa de
+presentación pura que centraliza la paleta clara oficial (azul `#046BD2`, fondo
+`#FFFFFF`, fondo suave `#F8FAFC`, texto `#111827` y borde `#E5E7EB`), inyecta el
+CSS de márgenes, tarjetas y pestañas, y publica el logo oficial en la barra
+lateral. La spec 024 hace el contenedor principal a **ancho fluido**
+(`max-width: none` con padding horizontal equilibrado). No accede a la base de
+datos.
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
@@ -172,7 +180,8 @@ Constantes: `COLOR_PRIMARIO`, `COLOR_FONDO`, `COLOR_FONDO_SUAVE`,
 - **Cobertura (spec 023):** paleta del tema global en `.streamlit/config.toml`
   (CA-01), ruta del logo por defecto y por variable de entorno (CA-02), e
   inyección del CSS y del logo (con y sin archivo) mediante un doble de
-  Streamlit. Patrón AAA.
+  Streamlit. La spec 024 añade la verificación del **ancho fluido** (sin
+  `max-width: 1200px` y con `max-width: none`). Patrón AAA.
 
 ### Módulo `domain.usuarios` — `src/certificado_operadores/domain/usuarios.py`
 
@@ -877,6 +886,11 @@ filtro de vencimiento como `DATE('now', '+' || :dias || ' days')` y sustituye la
 selección distinta de certificados por `ROW_NUMBER() OVER (PARTITION BY id_codigo
 ORDER BY fecha_certificado DESC)` filtrando `rn = 1`.
 
+La spec 024 proyecta el **nombre legible de la tipología** (`Articulado, Padron`)
+en el reporte de operadores por empresa, resuelve la columna `Empresa` de las
+reincidencias por el **prefijo COT** del código (para que nunca salga `None`) y
+añade el **filtro de concesionario** a las licencias y certificados por vencer.
+
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
 | `ReportesRepository.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa el repositorio inyectando el motor. | — |
@@ -901,34 +915,41 @@ Constantes: `TIPO_MIME_EXCEL`, `TIPO_MIME_CSV`, `ACCION_EXPORTAR_REPORTE`,
 `OPCIONES_ESTADO`, `OPCIONES_ESTADO_ACTIVO`, `ESTADO_A_VIGENCIA` y los límites de
 `dias_vencer`. La spec 022 añade las expresiones de fecha portables
 `_MODIFICADOR_VIGENCIA`, `_COL_VENCIMIENTO_LICENCIA`, `_COL_FECHA_EVENTOS`,
-`_COL_VENCIMIENTO_CERTIFICADO` y `_SUBCONSULTA_ULTIMO_CERTIFICADO`.
+`_COL_VENCIMIENTO_CERTIFICADO` y `_SUBCONSULTA_ULTIMO_CERTIFICADO`. La spec 024
+añade `_ETIQUETAS_TIPOLOGIA` y `_COLUMNA_TIPOLOGIA` (nombre legible de la
+tipología en SQLite).
 
 ### Módulo `reportes` — `src/certificado_operadores/modulos/reportes/ui.py`
 
-Interfaz Streamlit de reportes y exportaciones (specs 010 y 023): selección del
-reporte, **toolbar de filtros en una sola fila**, resultados con KPIs, gráfico de
-barras nativo y descargas. Delega todo el acceso a datos en
-`ReportesRepository`; no contiene sentencias SQL (RNF-01) ni conoce el esquema.
-El paquete expone `render_reportes` en
-`src/certificado_operadores/modulos/reportes/__init__.py`.
+Interfaz Streamlit de reportes y exportaciones (specs 010, 023 y 024): selección
+del reporte, **toolbar de filtros en una sola fila**, **KPIs de negocio por tipo
+de reporte** (prohibido sumar identificadores y sin la tarjeta de ``Columnas``),
+**botones de exportación en la cabecera** (sobre la tabla) y un **diagrama de
+Gantt de vencimientos por concesionario** (matplotlib) para licencias y
+certificados por vencer. Delega todo el acceso a datos en `ReportesRepository`;
+no contiene sentencias SQL (RNF-01) ni conoce el esquema. El paquete expone
+`render_reportes` en `src/certificado_operadores/modulos/reportes/__init__.py`.
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
 | `parsear_entero` | `(texto: str) -> int \| None` | Convierte el campo de búsqueda en entero. | `int` o `None` |
 | `pesos_toolbar` | `(numero_filtros: int) -> list[float]` | Spec 023: anchos del toolbar horizontal (`[2, 2, 1.5, 2, 1]` de referencia). | `list[float]` |
-| `construir_agregacion` | `(df: pd.DataFrame, limite: int = LIMITE_GRAFICO) -> pd.DataFrame` | Spec 023: agrega el resultado para el gráfico de barras nativo. | `pd.DataFrame` |
+| `color_criticidad` | `(dias: int \| float) -> str` | Spec 024: color del semáforo según días restantes (rojo/ámbar/azul). | `str` |
+| `calcular_kpis` | `(id_reporte: str, df: pd.DataFrame) -> list[tuple[str, int]]` | Spec 024: métricas de negocio por reporte (nunca suma IDs ni cuenta columnas). | `list[tuple[str, int]]` |
+| `generar_gantt_vencimientos` | `(df: pd.DataFrame) -> Figure` | Spec 024: diagrama de Gantt de vencimientos por concesionario. | `Figure` |
 | `_render_filtro` | `(filtro_tipo, filtro_etiqueta, defecto, repositorio, definicion) -> Any` | Spec 023: pinta un filtro y devuelve su valor tipado. | `Any` |
 | `_construir_seleccion` | `(definicion: DefinicionReporte, repositorio: ReportesRepository) -> tuple[SeleccionFiltros, bool]` | Spec 023: barra horizontal de filtros y botón. | `tuple` |
-| `_render_kpis` | `(df: pd.DataFrame) -> None` | Spec 023: tarjetas métricas ejecutivas (`st.metric`). | — |
-| `_render_grafico` | `(df: pd.DataFrame) -> None` | Spec 023: gráfico de barras horizontal nativo (`st.bar_chart`). | — |
-| `_render_resultado` | `(df: pd.DataFrame \| None, definicion, repositorio, usuario: str) -> None` | Muestra KPIs, tabla, gráfico, exportaciones y auditoría. | — |
+| `_render_kpis` | `(df: pd.DataFrame, definicion: DefinicionReporte) -> None` | Spec 024: tarjetas métricas de negocio (`st.metric`). | — |
+| `_render_exportacion` | `(df: pd.DataFrame, definicion: DefinicionReporte) -> None` | Spec 024: botones Excel/CSV en la cabecera, sobre la tabla. | — |
+| `_render_gantt` | `(df: pd.DataFrame, definicion: DefinicionReporte) -> None` | Spec 024: Gantt solo para reportes de vencimiento. | — |
+| `_render_resultado` | `(df: pd.DataFrame \| None, definicion, repositorio, usuario: str) -> None` | Muestra KPIs, exportación, tabla, Gantt y auditoría. | — |
 | `render_reportes` | `(repositorio: ReportesRepository \| None = None) -> None` | Renderiza la vista completa (punto de entrada de `pages/`). | — |
 
 Constantes: `TITULO`, `SUBTITULO`, `USUARIO_POR_DEFECTO`, `ETIQUETA_EJECUTAR`
 (`Filtrar`), `OPCION_TODAS`, `OPCION_TODOS`, `MENSAJE_SIN_RESULTADOS`,
-`PROPORCIONES_TOOLBAR`, `PESO_FILTRO`, `PESO_BOTON`, `LIMITE_GRAFICO`,
-`COLUMNA_CATEGORIA`, `COLUMNA_VALOR`, `COLUMNAS_TOTAL` y los rótulos `KPI_*` y
-`TITULO_GRAFICO`. Punto de entrada:
+`PROPORCIONES_TOOLBAR`, `PESO_FILTRO`, `PESO_BOTON`, y de la spec 024
+`DIAS_CRITICO` (30), `DIAS_ALERTA` (60), `COLOR_CRITICO` (`#EF4444`),
+`COLOR_ALERTA` (`#F59E0B`) y `_REPORTES_GANTT`. Punto de entrada:
 `src/certificado_operadores/pages/3_Reportes.py` (importa `render_reportes` y lo
 invoca; la página queda 100% libre de `exec`, cerrando la Fase 3).
 
@@ -941,10 +962,13 @@ invoca; la página queda 100% libre de `exec`, cerrando la Fase 3).
   certificados por vencer/vencidos con fechas relativas al día— verificando que
   ninguno arroje errores de sintaxis SQLite), funciones puras (condiciones por
   tipo de filtro, construcción de consulta, descripción de tipologías y
-  generación de Excel/CSV), de la spec 023 la agregación para el gráfico
-  (`construir_agregacion` con totales, ocurrencias, vacío y límite) y el reparto
-  del toolbar (`pesos_toolbar`), auditoría de exportación y criterios estáticos
-  (paquete CA-01, UI sin SQL RNF-01, toolbar/KPIs/gráfico CA-06, repositorio que
+  generación de Excel/CSV), de la spec 023 el reparto del toolbar
+  (`pesos_toolbar`), de la spec 024 la criticidad (`color_criticidad`), los KPIs
+  por reporte (`calcular_kpis` sin sumar identificadores ni contar columnas), el
+  Gantt de vencimientos (`generar_gantt_vencimientos`), la resolución de Empresa
+  por prefijo COT en reincidencias y el filtro de concesionario en vencimientos,
+  auditoría de exportación y criterios estáticos (paquete CA-01, UI sin SQL
+  RNF-01, KPIs/exportación/Gantt sin `bar_chart` CA-03/CA-05, repositorio que
   encapsula la SQL CA-03 y sin sintaxis PostgreSQL CA-01, página sin `exec` con
   `render_reportes` CA-02/RNF-02). Patrón AAA.
 

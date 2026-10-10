@@ -85,6 +85,14 @@ _SQL_TOTAL_LICENCIAS = text("SELECT COUNT(*) FROM fact_licencias")
 ACCION_CREAR_OPERADOR = "CREAR_OPERADOR"
 """Acción registrada en ``log_auditoria`` al persistir un operador."""
 
+BASE_CODIGO_CONCESIONARIO = 10000
+"""Base del rango numérico de códigos por concesionario (spec 024).
+
+Cada concesionario ``id_empresa`` ocupa el rango ``[id_empresa * 10000,
+(id_empresa + 1) * 10000)``: GIT (1) usa 10001-19999, ByN (2) 20001-29999, ETM
+(3) 30001-39999 y Unimetro (4) 40001-49999.
+"""
+
 FORMATO_FECHA_HORA = "%Y-%m-%d %H:%M:%S"
 """Formato de fecha y hora usado en las columnas de auditoría."""
 
@@ -135,7 +143,13 @@ _SQL_ACTUALIZAR_PERSONA = text(
     """
 )
 
-_SQL_SIGUIENTE_CODIGO = text("SELECT COALESCE(MAX(id_codigo), 0) + 1 FROM dim_codigo")
+_SQL_SIGUIENTE_CODIGO = text(
+    """
+    SELECT COALESCE(MAX(id_codigo), :base) + 1
+    FROM dim_codigo
+    WHERE id_codigo >= :base AND id_codigo < :limite
+    """
+)
 
 _SQL_INSERT_CODIGO = text(
     """
@@ -337,6 +351,44 @@ class OperadoresRepository:
             ).scalar_one()
         return int(total) > 0
 
+    def siguiente_codigo(self, id_empresa: int) -> int:
+        """Calcula el siguiente código de operación dentro del rango del concesionario.
+
+        Cada concesionario tiene su propio bloque numérico de códigos (spec 024):
+        el siguiente código se obtiene del máximo ya asignado dentro de
+        ``[id_empresa * 10000, (id_empresa + 1) * 10000)``, de modo que GIT (1)
+        arranca en 10001, ByN (2) en 20001, ETM (3) en 30001 y Unimetro (4) en
+        40001.
+
+        Args:
+            id_empresa: Identificador del concesionario al que pertenece el código.
+
+        Returns:
+            El siguiente código libre del rango del concesionario.
+        """
+        with self.motor.connect() as conexion:
+            return self._siguiente_codigo(conexion, id_empresa)
+
+    def _siguiente_codigo(self, conexion: Connection, id_empresa: int) -> int:
+        """Resuelve el siguiente código sobre una conexión ya abierta.
+
+        Se usa dentro de la transacción de :meth:`crear_operador` para que el
+        cálculo del código y su inserción sean atómicos.
+
+        Args:
+            conexion: Conexión SQLAlchemy activa (dentro de la transacción).
+            id_empresa: Identificador del concesionario.
+
+        Returns:
+            El siguiente código libre del rango del concesionario.
+        """
+        base = int(id_empresa) * BASE_CODIGO_CONCESIONARIO
+        limite = (int(id_empresa) + 1) * BASE_CODIGO_CONCESIONARIO
+        resultado = conexion.execute(
+            _SQL_SIGUIENTE_CODIGO, {"base": base, "limite": limite}
+        ).scalar_one()
+        return int(resultado)
+
     def crear_operador(self, registro: RegistroOperador, usuario: str = "") -> int:
         """Persiste un operador nuevo en ``dim_persona`` y ``dim_codigo``.
 
@@ -370,7 +422,7 @@ class OperadoresRepository:
             else:
                 conexion.execute(_SQL_INSERT_PERSONA, datos_persona)
 
-            codigo = int(conexion.execute(_SQL_SIGUIENTE_CODIGO).scalar_one())
+            codigo = self._siguiente_codigo(conexion, registro.id_empresa)
             conexion.execute(
                 _SQL_INSERT_CODIGO,
                 {
