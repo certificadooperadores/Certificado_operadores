@@ -70,6 +70,7 @@ certificado-operadores/
 │   │   ├── usuarios_repository.py # repositorio de usuarios (dim_usuarios)
 │   │   ├── eventos_repository.py  # repositorio de eventos (fact_eventos_operador)
 │   │   ├── catalogos_repository.py # repositorio de los cinco catálogos (dim_*)
+│   │   ├── certificados_repository.py # repositorio de eventos y certificados (fact_eventos_operador)
 │   │   ├── backup_service.py      # copias de seguridad de SQLite (sistema de archivos)
 │   │   └── seguridad.py           # hashing de contraseñas (bcrypt)
 │   ├── modulos/                   # un módulo de UI por carpeta (p. ej. admin_operadores/)
@@ -81,6 +82,8 @@ certificado-operadores/
 │   │   │   └── ui.py              # interfaz de Streamlit; consume CatalogosRepository, sin SQL
 │   │   ├── correccion_registros/
 │   │   │   └── ui.py              # interfaz de Streamlit; consume EventosRepository, sin SQL
+│   │   ├── gestion_certificados/
+│   │   │   └── ui.py              # interfaz de Streamlit; consume CertificadosRepository, sin SQL
 │   │   └── gestion_usuarios/
 │   │       └── ui.py              # interfaz de Streamlit; consume el Facade, sin SQL
 │   ├── pages/                     # puntos de entrada de Streamlit (páginas delgadas)
@@ -224,6 +227,7 @@ git push
 | 2026-10-09 | Extraer la UI de backups a `modulos/administrar_backups/ui.py` con `BackupService` (API de respaldo de SQLite, directorio configurable) y eliminar el `exec` de la pestaña en `pages/1_Configuracion.py` | Cumplir la spec 005: cero operaciones de SO/SQL en la UI y fin de la ruta dura `/Backups` y del `pg_dump` de PostgreSQL |
 | 2026-10-09 | Extraer la corrección de registros a `modulos/correccion_registros/ui.py` con `EventosRepository` (filtros, lotes y mutaciones con auditoría) y deprecar `modulos/3_Modificacion_Tablas.py` | Cumplir la spec 006: cero SQL en la página y en la vista; todo el acceso a `fact_eventos_operador` pasa por el repositorio |
 | 2026-10-09 | Extraer los catálogos a `modulos/catalogos/ui.py` con `CatalogosRepository` y eliminar el último `exec` de `pages/1_Configuracion.py` | Cumplir la spec 007: la UI no ejecuta SQL (Facade/Repositorio) y la página de configuración queda 100% desacoplada |
+| 2026-10-09 | Extraer la gestión de certificados a `modulos/gestion_certificados/ui.py` con `CertificadosRepository`, deprecar `modulos/6_Gestion_Certificados.py` y eliminar el `exec` de la pestaña 2 de `pages/2_Administracion_Operadores.py` | Cumplir la spec 008: cero SQL en la vista, registro individual y masivo desacoplados y encapsulados en el repositorio |
 
 ## 10. Notas y tareas pendientes
 

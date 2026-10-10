@@ -1,9 +1,10 @@
 """Punto de entrada de Streamlit: Administración de Operadores.
 
 Página delgada (patrón Facade): delega la pestaña "Operadores" al módulo
-``admin_operadores`` —que consume exclusivamente ``OperadoresFacade``— y
-conserva las pestañas restantes ya existentes. Este archivo no ejecuta
-sentencias de base de datos (spec 003).
+``admin_operadores``, la pestaña "Gestión de Certificados" al módulo
+``gestion_certificados`` —ambos consumen sus repositorios— y conserva la
+pestaña "Reporte de Comportamientos". Este archivo no ejecuta sentencias de
+base de datos (specs 003 y 008).
 
 Autor: Ing. Miguel Angel Ortiz Roldan
 """
@@ -27,6 +28,7 @@ if st.sidebar.button("🔒 Cerrar Sesión", use_container_width=True):
 mostrar_badge_version()
 
 from modulos.admin_operadores import OperadoresFacade, render_page  # noqa: E402
+from modulos.gestion_certificados import render_gestion_certificados  # noqa: E402
 
 t1, t2, t3 = st.tabs(
     ["👨‍✈️ Operadores", "📅 Gestión de Certificados", "📋 Reporte de Comportamientos"]
@@ -34,6 +36,6 @@ t1, t2, t3 = st.tabs(
 with t1:
     render_page(OperadoresFacade())
 with t2:
-    exec(Path("modulos/6_Gestion_Certificados.py").read_text(encoding="utf-8"), globals())
+    render_gestion_certificados()
 with t3:
     exec(Path("modulos/9_Reporte_Comportamientos.py").read_text(encoding="utf-8"), globals())

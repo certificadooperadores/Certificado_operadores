@@ -26,6 +26,8 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `correccion_registros` | `src/certificado_operadores/modulos/correccion_registros/ui.py` | Interfaz Streamlit de corrección de registros; consume `EventosRepository` y no contiene SQL. |
 | `infra.catalogos_repository` | `src/certificado_operadores/infra/catalogos_repository.py` | Acceso a datos de los cinco catálogos (empresas, vehículos, impactos, comportamientos y detalles) con auditoría (SQLAlchemy). |
 | `catalogos` | `src/certificado_operadores/modulos/catalogos/ui.py` | Interfaz Streamlit de catálogos; consume `CatalogosRepository` y no contiene SQL. |
+| `infra.certificados_repository` | `src/certificado_operadores/infra/certificados_repository.py` | Acceso a datos del registro de eventos y certificados: catálogos auxiliares, operador activo y registro con auditoría (SQLAlchemy). |
+| `gestion_certificados` | `src/certificado_operadores/modulos/gestion_certificados/ui.py` | Interfaz Streamlit de gestión de certificados; consume `CertificadosRepository` y no contiene SQL. |
 
 ## Funciones
 
@@ -404,6 +406,85 @@ entrada: `src/certificado_operadores/pages/1_Configuracion.py` (importa
   `id_impacto_desde_nombre`, `opciones_comportamiento`); y criterios estáticos
   (paquete CA-01, UI sin SQL RNF-01, repositorio que encapsula la SQL CA-03,
   página sin `exec` con `render_catalogos` CA-02/RNF-02). Patrón AAA.
+
+### Módulo `infra.certificados_repository` — `src/certificado_operadores/infra/certificados_repository.py`
+
+Repositorio de la capa de infraestructura que encapsula **todo** el acceso a
+datos del registro de eventos y certificados: catálogos auxiliares (tipos de
+evento, vehículos y evaluadores), búsqueda del operador activo por cédula o
+código y la inserción de eventos en `fact_eventos_operador` con su auditoría en
+la misma transacción. Reutiliza `TipoEventoInfo` y `VehiculoInfo` de los otros
+repositorios.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `CertificadosRepository.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa el repositorio inyectando el motor. | — |
+| `CertificadosRepository.motor` | `propiedad -> Engine` | Motor SQLAlchemy (inyectado o resuelto de `db.get_engine`). | `Engine` |
+| `CertificadosRepository.listar_tipos_evento` | `() -> list[TipoEventoInfo]` | Lista los tipos de evento ordenados por id. | `list[TipoEventoInfo]` |
+| `CertificadosRepository.listar_vehiculos` | `() -> list[VehiculoInfo]` | Lista los vehículos evaluables ordenados por id. | `list[VehiculoInfo]` |
+| `CertificadosRepository.listar_evaluadores` | `() -> list[str]` | Lista los evaluadores históricos distintos. | `list[str]` |
+| `CertificadosRepository.buscar_operador_activo_por_codigo` | `(codigo: int) -> OperadorActivoInfo \| None` | RF-01: operador vigente y no cancelado por código. | `OperadorActivoInfo` o `None` |
+| `CertificadosRepository.buscar_operador_activo_por_cedula` | `(cedula: int) -> OperadorActivoInfo \| None` | RF-01: código activo no cancelado más reciente del operador. | `OperadorActivoInfo` o `None` |
+| `CertificadosRepository.registrar_evento` | `(datos: DatosEvento, usuario: str) -> int` | RF-02: inserta un evento y audita; devuelve su id. | `int` |
+| `CertificadosRepository.registrar_eventos` | `(eventos: list[DatosEvento], usuario, accion, detalles) -> int` | RF-03: inserta varios eventos y una auditoría. | `int` |
+| `CertificadosRepository._siguiente_id` | `() -> int` | Calcula `MAX(id_hecho_evento)+1`. | `int` |
+| `CertificadosRepository._parametros_evento` | `(datos, id_hecho_evento, usuario) -> dict[str, object]` | Traduce el evento a parámetros enlazados. | `dict` |
+| `CertificadosRepository._auditar` | `(conexion, usuario, accion, detalles) -> None` | Inserta la auditoría en la transacción. | — |
+| `_formatear_fecha` | `(valor: date \| None) -> str \| None` | Convierte una fecha a texto ISO. | `str` o `None` |
+| `_mapear_operador` | `(fila: RowMapping) -> OperadorActivoInfo` | Mapea una fila al DTO de operador activo. | `OperadorActivoInfo` |
+
+DTOs: `OperadorActivoInfo` (con `nombre_completo()`) y `DatosEvento` (entrada).
+Constantes: `TIPO_EVENTO_*` (certificación, reactivación, renovación,
+observación, restricción médica, suspensión, cancelación, advertencia,
+condicionamiento) y `ACCION_REGISTRO_EVENTO`, `ACCION_CARGA_MASIVA`.
+
+### Módulo `gestion_certificados` — `src/certificado_operadores/modulos/gestion_certificados/ui.py`
+
+Interfaz Streamlit de registro de eventos e historial (spec 008). Ofrece el
+ingreso individual y la carga masiva desde Excel; busca al operador activo y
+delega todo el acceso a datos en `CertificadosRepository`. No contiene sentencias
+SQL (RNF-01) ni conoce el esquema. El paquete expone `render_gestion_certificados`
+en `src/certificado_operadores/modulos/gestion_certificados/__init__.py`.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `limpiar_texto` | `(valor: object) -> str \| None` | Normaliza un texto vacío/`NaN` a `None`. | `str` o `None` |
+| `limpiar_entero` | `(valor: object) -> int \| None` | Normaliza un entero (admite decimales de Excel). | `int` o `None` |
+| `parsear_entero` | `(texto: str) -> int \| None` | Convierte el campo de búsqueda en entero. | `int` o `None` |
+| `es_codigo_operacion` | `(texto: str) -> bool` | Indica si el texto es un código (cinco dígitos o menos). | `bool` |
+| `opciones_evento` | `(tipos: list[TipoEventoInfo]) -> list[str]` | Construye las opciones "id - nombre". | `list[str]` |
+| `id_desde_opcion` | `(opcion: str) -> int` | Extrae el id de tipo de evento de la opción. | `int` |
+| `nombre_hoja` | `(id_tipo_evento: int) -> str` | Hoja de Excel del tipo de evento. | `str` |
+| `_como_fecha` | `(valor: object) -> date \| None` | Normaliza una fecha del formulario o del Excel. | `date` o `None` |
+| `validar_evento_individual` | `(id_tipo_evento: int, campos: Mapping[str, object]) -> list[str]` | RF-02: valida los campos del evento individual. | `list[str]` |
+| `validar_fila_masiva` | `(id_tipo_evento: int, fila: Mapping[str, object]) -> str` | RF-03: valida una fila de la carga masiva. | `str` |
+| `construir_datos_evento` | `(id_codigo: int, id_tipo_evento: int, campos) -> DatosEvento` | Traduce los campos a un `DatosEvento`. | `DatosEvento` |
+| `construir_datos_desde_fila` | `(id_tipo_evento: int, id_codigo: int, fila) -> DatosEvento` | Traduce una fila del Excel a `DatosEvento`. | `DatosEvento` |
+| `construir_plantilla_eventos` | `(evaluadores: list[str]) -> bytes` | Genera el Excel de la plantilla maestra. | `bytes` |
+| `render_gestion_certificados` | `(repositorio: CertificadosRepository \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
+
+Constantes: `TITULO`, `EVALUADOR_OTRO`, `SEPARADOR_OPCION`,
+`NOMBRE_ARCHIVO_PLANTILLA`, `TIPO_MIME_EXCEL`, `HOJA_INSTRUCCIONES`,
+`HOJAS_POR_EVENTO`, `COLUMNAS_POR_EVENTO`, `INSTRUCCIONES_PLANTILLA`,
+`ESTADO_LISTO`, `VALIDACION_OK` y los mensajes `ERROR_*`. Punto de entrada:
+`src/certificado_operadores/pages/2_Administracion_Operadores.py` (importa
+`render_gestion_certificados` y lo invoca en la pestaña 2; ya **no** usa `exec`).
+El módulo heredado `modulos/6_Gestion_Certificados.py` quedó **deprecado** como
+redirección a esta interfaz.
+
+### Módulo `gestion_certificados` — pruebas
+
+- **Ubicación:** `tests/test_gestion_certificados.py`
+- **Cobertura:** repositorio contra SQLite temporal (tipos de evento, vehículos,
+  evaluadores, operador activo por cédula y código incluyendo cancelados e
+  inactivos, registro individual y masivo con auditoría, lista vacía); funciones
+  puras de la UI (`parsear_entero`, `es_codigo_operacion`, `limpiar_texto`,
+  `limpiar_entero`, `opciones_evento`/`id_desde_opcion`, `nombre_hoja`,
+  `validar_evento_individual`, `validar_fila_masiva`,
+  `construir_datos_desde_fila`, `construir_plantilla_eventos`); y criterios
+  estáticos (paquete CA-01, UI sin SQL RNF-01, repositorio que encapsula la SQL
+  CA-03, página sin `exec` con `render_gestion_certificados` CA-02/RNF-02,
+  módulo heredado deprecado sin SQL). Patrón AAA.
 
 ## Detalle
 

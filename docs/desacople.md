@@ -59,6 +59,7 @@ UI / Streamlit  →  Facade (casos de uso)  →  Dominio  →  Infraestructura
 | UI (backups) -> Sistema de archivos/BD | Operaciones de SO y SQL dispersas en la vista | **Mitigado**: `modulos/administrar_backups/ui.py` solo invoca `BackupService`; el manejo de archivos y la copia SQLite viven en `infra/backup_service.py` (spec 005). |
 | UI (corrección) -> Base de Datos | Consultas SQL y mutaciones crudas inlined en la vista | **Mitigado**: `modulos/correccion_registros/ui.py` solo invoca `EventosRepository`; la lógica inlined y duplicada de `3_Modificacion_Tablas.py` fue erradicada (spec 006). |
 | UI (catálogos) -> Base de Datos | Más de 20 consultas SQL crudas mezcladas con la vista de catálogos | **Mitigado**: `modulos/catalogos/ui.py` solo invoca `CatalogosRepository`; se eliminó el último `exec` de `pages/1_Configuracion.py` (spec 007). |
+| UI (certificados) -> Base de Datos | Más de 15 consultas SQL y transacciones crudas en la vista de eventos | **Mitigado**: `modulos/gestion_certificados/ui.py` solo invoca `CertificadosRepository`; se eliminó el `exec` de la pestaña 2 de `pages/2_Administracion_Operadores.py` y el módulo heredado `6_Gestion_Certificados.py` quedó deprecado (spec 008). |
 | Facade -> Infra | Facade atado a SQLAlchemy | **Mitigado**: Facade delega todo acceso a datos a `OperadoresRepository`. |
 | Tipado Dinámico | Errores de acceso a diccionarios en UI | **Mitigado**: Uso estricto de `dataclasses` (`OperadorInfo`) en la capa de Dominio. |
 
@@ -71,6 +72,7 @@ UI / Streamlit  →  Facade (casos de uso)  →  Dominio  →  Infraestructura
 5. **Servicio de backups (spec 005):** La administración de respaldos se extrajo a `modulos/administrar_backups/ui.py`, que consume `infra/backup_service.py`; la página `pages/1_Configuracion.py` dejó de usar `exec` en la pestaña de backups. La copia se hace con la API de respaldo de `sqlite3` (consistente), con directorio configurable (`BACKUPS_DIR`, por defecto `backups/`) y sin rutas absolutas como el heredado `/Backups`.
 6. **Repositorio de eventos y corrección (spec 006):** La corrección de registros individuales y lotes se extrajo a `modulos/correccion_registros/ui.py`, delegando en `infra/eventos_repository.py`. Se eliminaron más de 140 líneas inlined de SQL en `pages/1_Configuracion.py` y se reemplazó el archivo heredado duplicado `3_Modificacion_Tablas.py`.
 7. **Repositorio de catálogos (spec 007):** La gestión de los cinco catálogos se extrajo a `modulos/catalogos/ui.py`, delegando en `infra/catalogos_repository.py`. Se eliminó el último `exec(open(...))` de `pages/1_Configuracion.py`, que quedó 100% libre de `exec` y desacoplada de la base de datos.
+8. **Repositorio de certificados (spec 008):** El registro de eventos e historial de certificaciones se extrajo a `modulos/gestion_certificados/ui.py`, delegando en `infra/certificados_repository.py`. Se eliminó el `exec` de la pestaña 2 de `pages/2_Administracion_Operadores.py` y el módulo heredado `6_Gestion_Certificados.py` quedó deprecado como redirección.
 
 ---
 
