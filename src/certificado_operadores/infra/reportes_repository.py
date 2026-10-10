@@ -26,6 +26,7 @@ from sqlalchemy import text
 from certificado_operadores.domain.models import (
     ANIOS_VIGENCIA_CERTIFICADO,
     TIPO_EVENTO_CANCELACION,
+    TIPOS_EVENTO_CERTIFICADO,
     VIGENCIA_ACTIVA,
     VIGENCIA_ANULADA,
 )
@@ -64,14 +65,39 @@ DIAS_VENCIMIENTO_MINIMO = 1
 DIAS_VENCIMIENTO_MAXIMO = 365
 """Límite superior del control de días para vencimiento."""
 
-# --- Columnas de los filtros (se quedan en la infraestructura) ---------------
-_COL_VENCIMIENTO_LICENCIA = "l.vencimiento::date"
+# --- Expresiones de fecha compatibles con SQLite (spec 022) ------------------
+# La sintaxis nativa de PostgreSQL se sustituye por funciones propias de SQLite
+# (normalización de fechas, aritmética de fechas y numeración de filas) para que
+# todos los reportes se ejecuten sin errores sobre el motor embebido.
+_MODIFICADOR_VIGENCIA = f"+{ANIOS_VIGENCIA_CERTIFICADO} years"
+"""Modificador de SQLite que suma los años de vigencia a una fecha ISO."""
+
+_LISTA_TIPOS_CERTIFICADO = ", ".join(str(tipo) for tipo in TIPOS_EVENTO_CERTIFICADO)
+"""Tipos de evento de certificación como lista literal para el ``IN``."""
+
+_COL_VENCIMIENTO_LICENCIA = "DATE(l.vencimiento)"
+"""Vencimiento de la licencia normalizado como fecha."""
+
 _COL_FECHA_EVENTOS = (
-    "COALESCE(e.fecha_certificado, e.fecha_retiro, e.fecha_suspension, "
-    "e.fecha_observacion, e.fecha_registro)::date"
+    "DATE(COALESCE(e.fecha_certificado, e.fecha_retiro, e.fecha_suspension, "
+    "e.fecha_observacion, e.fecha_registro))"
 )
-_INTERVALO_VIGENCIA = f"INTERVAL '{ANIOS_VIGENCIA_CERTIFICADO} years'"
-_COL_VENCIMIENTO_CERTIFICADO = f"(e.fecha_certificado::date + {_INTERVALO_VIGENCIA})::date"
+"""Fecha efectiva de un evento normalizada con la función ``DATE`` de SQLite."""
+
+_COL_VENCIMIENTO_CERTIFICADO = f"DATE(e.fecha_certificado, '{_MODIFICADOR_VIGENCIA}')"
+"""Vencimiento del certificado: fecha de certificación más los años de vigencia."""
+
+_SUBCONSULTA_ULTIMO_CERTIFICADO = f"""
+    SELECT id_codigo, id_tipo_evento, fecha_certificado,
+           ROW_NUMBER() OVER (
+               PARTITION BY id_codigo ORDER BY DATE(fecha_certificado) DESC
+           ) AS rn
+    FROM fact_eventos_operador
+    WHERE id_tipo_evento IN ({_LISTA_TIPOS_CERTIFICADO})
+      AND fecha_certificado IS NOT NULL AND fecha_certificado <> ''
+"""
+"""Último certificado por código, numerado para conservar solo la fila reciente."""
+
 _SUBCONSULTA_CANCELACION = (
     "SELECT id_codigo FROM fact_eventos_operador WHERE id_tipo_evento = :cancelacion"
 )
@@ -265,7 +291,7 @@ _REPORTES: tuple[_Reporte, ...] = (
                    p.segundo_apellido AS "LASTNAME2",
                    CASE WHEN dc.id_vigencia = 1 THEN 1 ELSE 2 END AS "STATEID",
                    dc.id_empresa AS "TRANSPORTCONTRATISTID",
-                   dc.fecha_registro::date AS "REGISTERDATE",
+                   DATE(dc.fecha_registro) AS "REGISTERDATE",
                    dc.id_perfil_tipologia AS "TIPOLOGY"
             FROM dim_codigo dc
             LEFT JOIN dim_persona p ON dc.id_persona = p.id_persona
@@ -315,10 +341,14 @@ _REPORTES: tuple[_Reporte, ...] = (
             "Dias Restantes",
         ),
         consulta="""
-            SELECT l.id_codigo AS "Codigo", l.id_codigo AS "Cedula", '' AS "Nombre",
-                   l.tipo AS "Tipo Licencia", l.vencimiento AS "Vencimiento",
-                   (l.vencimiento::date - CURRENT_DATE) AS "Dias Restantes"
+            SELECT l.id_codigo AS "Codigo", c.id_persona AS "Cedula",
+                   (p.nombres || ' ' || p.primer_apellido) AS "Nombre",
+                   l.tipo AS "Tipo Licencia", DATE(l.vencimiento) AS "Vencimiento",
+                   CAST(ROUND(JULIANDAY(l.vencimiento) - JULIANDAY('now')) AS INTEGER)
+                       AS "Dias Restantes"
             FROM fact_licencias l
+            LEFT JOIN dim_codigo c ON l.id_codigo = c.id_codigo
+            LEFT JOIN dim_persona p ON c.id_persona = p.id_persona
             WHERE 1=1 AND l.vencimiento IS NOT NULL
         """,
         filtros=(
@@ -413,7 +443,7 @@ _REPORTES: tuple[_Reporte, ...] = (
         """,
         filtros=(
             _FiltroReporte("codigo", "f.id_codigo", "Código de Operador"),
-            _FiltroReporte("fecha", "f.fecha_evento::date", "Rango de fechas"),
+            _FiltroReporte("fecha", "DATE(f.fecha_evento)", "Rango de fechas"),
         ),
     ),
     _Reporte(
@@ -436,21 +466,15 @@ _REPORTES: tuple[_Reporte, ...] = (
             SELECT e.id_codigo AS "Codigo", c.id_persona AS "Cedula",
                    (p.nombres || ' ' || p.primer_apellido) AS "Nombre",
                    te.nombre_evento AS "Ultimo Evento",
-                   e.fecha_certificado::date AS "Fecha Certificado",
-                   (e.fecha_certificado::date + {_INTERVALO_VIGENCIA})::date AS "Vencimiento",
-                   ((e.fecha_certificado::date + {_INTERVALO_VIGENCIA})::date
-                       - CURRENT_DATE) AS "Dias Restantes"
-            FROM (
-                SELECT DISTINCT ON (id_codigo) id_codigo, id_tipo_evento, fecha_certificado
-                FROM fact_eventos_operador
-                WHERE id_tipo_evento IN (1,2,3) AND fecha_certificado IS NOT NULL
-                  AND fecha_certificado <> ''
-                ORDER BY id_codigo, fecha_certificado::date DESC
-            ) e
+                   DATE(e.fecha_certificado) AS "Fecha Certificado",
+                   {_COL_VENCIMIENTO_CERTIFICADO} AS "Vencimiento",
+                   CAST(ROUND(JULIANDAY({_COL_VENCIMIENTO_CERTIFICADO})
+                       - JULIANDAY('now')) AS INTEGER) AS "Dias Restantes"
+            FROM ({_SUBCONSULTA_ULTIMO_CERTIFICADO}) e
             LEFT JOIN dim_codigo c ON e.id_codigo = c.id_codigo
             LEFT JOIN dim_persona p ON c.id_persona = p.id_persona
             LEFT JOIN dim_tipo_evento te ON e.id_tipo_evento = te.id_tipo_evento
-            WHERE 1=1 AND c.id_codigo NOT IN (
+            WHERE 1=1 AND e.rn = 1 AND c.id_codigo NOT IN (
                 SELECT id_codigo FROM fact_eventos_operador WHERE id_tipo_evento = 7)
         """,
         filtros=(
@@ -482,22 +506,16 @@ _REPORTES: tuple[_Reporte, ...] = (
             SELECT e.id_codigo AS "Codigo", c.id_persona AS "Cedula",
                    (p.nombres || ' ' || p.primer_apellido) AS "Nombre",
                    te.nombre_evento AS "Ultimo Evento",
-                   e.fecha_certificado::date AS "Fecha Certificado",
-                   (e.fecha_certificado::date + {_INTERVALO_VIGENCIA})::date AS "Vencimiento",
-                   (CURRENT_DATE - (e.fecha_certificado::date
-                       + {_INTERVALO_VIGENCIA})::date) AS "Dias Vencido"
-            FROM (
-                SELECT DISTINCT ON (id_codigo) id_codigo, id_tipo_evento, fecha_certificado
-                FROM fact_eventos_operador
-                WHERE id_tipo_evento IN (1,2,3) AND fecha_certificado IS NOT NULL
-                  AND fecha_certificado <> ''
-                ORDER BY id_codigo, fecha_certificado::date DESC
-            ) e
+                   DATE(e.fecha_certificado) AS "Fecha Certificado",
+                   {_COL_VENCIMIENTO_CERTIFICADO} AS "Vencimiento",
+                   CAST(ROUND(JULIANDAY('now')
+                       - JULIANDAY({_COL_VENCIMIENTO_CERTIFICADO})) AS INTEGER)
+                       AS "Dias Vencido"
+            FROM ({_SUBCONSULTA_ULTIMO_CERTIFICADO}) e
             LEFT JOIN dim_codigo c ON e.id_codigo = c.id_codigo
             LEFT JOIN dim_persona p ON c.id_persona = p.id_persona
             LEFT JOIN dim_tipo_evento te ON e.id_tipo_evento = te.id_tipo_evento
-            WHERE 1=1 AND (e.fecha_certificado::date + {_INTERVALO_VIGENCIA})::date
-                < CURRENT_DATE
+            WHERE 1=1 AND e.rn = 1 AND {_COL_VENCIMIENTO_CERTIFICADO} < DATE('now')
               AND c.id_codigo NOT IN (
                 SELECT id_codigo FROM fact_eventos_operador WHERE id_tipo_evento = 7)
         """,
@@ -783,7 +801,11 @@ class ReportesRepository:
                 condiciones.append(f"{filtro.columna} = :tip")
                 parametros["tip"] = seleccion.tipologia
             elif tipo == "dias_vencer" and seleccion.dias_vencer is not None:
-                fragmento = f"{filtro.columna} BETWEEN CURRENT_DATE AND CURRENT_DATE + :dias"
+                # Ventana de vencimiento con la aritmética de fechas de SQLite:
+                # se concatenan los días enlazados para formar el modificador.
+                fragmento = (
+                    f"{filtro.columna} BETWEEN DATE('now') AND DATE('now', '+' || :dias || ' days')"
+                )
                 condiciones.append(fragmento)
                 parametros["dias"] = int(seleccion.dias_vencer)
             elif tipo == "fecha" and seleccion.fecha_desde and seleccion.fecha_hasta:

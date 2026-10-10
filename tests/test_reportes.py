@@ -16,7 +16,7 @@ from __future__ import annotations
 import io
 import re
 from collections.abc import Iterator
-from datetime import date
+from datetime import date, timedelta
 from pathlib import Path
 
 import pandas as pd
@@ -66,6 +66,13 @@ _IDS_REPORTES = (
     "certificados_vencidos",
 )
 
+# Fechas relativas al día de ejecución para que los reportes de vencimiento sean
+# deterministas: una licencia vigente, un certificado por vencer y uno vencido.
+_HOY = date.today()
+_VENCIMIENTO_LICENCIA = (_HOY + timedelta(days=365)).isoformat()
+_CERTIFICADO_POR_VENCER = (_HOY - timedelta(days=365 * 3 - 30)).isoformat()
+_CERTIFICADO_VENCIDO = (_HOY - timedelta(days=365 * 3 + 10)).isoformat()
+
 # --- Esquema mínimo para las pruebas del repositorio ------------------------
 _ESQUEMA = (
     """
@@ -87,7 +94,8 @@ _ESQUEMA = (
     CREATE TABLE dim_persona (
         id_persona INTEGER PRIMARY KEY,
         nombres TEXT,
-        primer_apellido TEXT
+        primer_apellido TEXT,
+        segundo_apellido TEXT
     );
     """,
     """
@@ -122,7 +130,38 @@ _ESQUEMA = (
     CREATE TABLE fact_eventos_operador (
         id_hecho_evento INTEGER PRIMARY KEY,
         id_codigo INTEGER,
-        id_tipo_evento INTEGER
+        id_tipo_evento INTEGER,
+        fecha_certificado TEXT,
+        fecha_retiro TEXT,
+        fecha_suspension TEXT,
+        fecha_observacion TEXT,
+        fecha_registro TEXT,
+        observacion TEXT
+    );
+    """,
+    """
+    CREATE TABLE fact_licencias (
+        id_hecho_licencia INTEGER PRIMARY KEY,
+        id_codigo INTEGER,
+        tipo TEXT,
+        vencimiento TEXT
+    );
+    """,
+    """
+    CREATE TABLE fact_comportamiento (
+        id_hecho_comportamiento INTEGER PRIMARY KEY,
+        id_codigo INTEGER,
+        id_jerarquia INTEGER,
+        caso_bitacora_ticket TEXT,
+        fecha_evento TEXT,
+        vehiculo TEXT,
+        ruta TEXT
+    );
+    """,
+    """
+    CREATE TABLE dim_detalle_comportamiento (
+        id_jerarquia INTEGER PRIMARY KEY,
+        descripcion_comportamiento TEXT
     );
     """,
     """
@@ -181,10 +220,13 @@ def _sembrar(motor: Engine) -> None:
             ],
         )
         conexion.execute(
-            text("INSERT INTO dim_persona VALUES (:id, :nombres, :apellido)"),
+            text(
+                "INSERT INTO dim_persona (id_persona, nombres, primer_apellido, "
+                "segundo_apellido) VALUES (:id, :nombres, :apellido, :segundo)"
+            ),
             [
-                {"id": 9001, "nombres": "Ana", "apellido": "Pérez"},
-                {"id": 9002, "nombres": "Luis", "apellido": "Rojas"},
+                {"id": 9001, "nombres": "Ana", "apellido": "Pérez", "segundo": "Gómez"},
+                {"id": 9002, "nombres": "Luis", "apellido": "Rojas", "segundo": "Díaz"},
             ],
         )
         conexion.execute(
@@ -213,6 +255,64 @@ def _sembrar(motor: Engine) -> None:
         conexion.execute(
             text("INSERT INTO dim_comportamiento VALUES (:id, :nombre)"),
             [{"id": 10, "nombre": "Conducción temeraria"}],
+        )
+        conexion.execute(
+            text(
+                "INSERT INTO dim_detalle_comportamiento "
+                "(id_jerarquia, descripcion_comportamiento) VALUES (:id, :desc)"
+            ),
+            [{"id": 10, "desc": "Conducción temeraria"}],
+        )
+        conexion.execute(
+            text(
+                "INSERT INTO fact_licencias (id_hecho_licencia, id_codigo, tipo, "
+                "vencimiento) VALUES (:id, :cod, :tipo, :venc)"
+            ),
+            [{"id": 1, "cod": 2001, "tipo": "C3", "venc": _VENCIMIENTO_LICENCIA}],
+        )
+        conexion.execute(
+            text(
+                "INSERT INTO fact_comportamiento (id_hecho_comportamiento, id_codigo, "
+                "id_jerarquia, caso_bitacora_ticket, fecha_evento, vehiculo, ruta) "
+                "VALUES (:id, :cod, :jer, :caso, :fecha, :veh, :ruta)"
+            ),
+            [
+                {
+                    "id": 1,
+                    "cod": 2001,
+                    "jer": 10,
+                    "caso": "TKT-001",
+                    "fecha": "2026-01-05",
+                    "veh": "ABC123",
+                    "ruta": "R1",
+                }
+            ],
+        )
+        conexion.execute(
+            text(
+                "INSERT INTO fact_eventos_operador (id_hecho_evento, id_codigo, "
+                "id_tipo_evento, fecha_certificado, fecha_retiro, fecha_suspension, "
+                "fecha_observacion, fecha_registro, observacion) VALUES "
+                "(:id, :cod, :tipo, :cert, NULL, NULL, NULL, :registro, :obs)"
+            ),
+            [
+                {
+                    "id": 101,
+                    "cod": 2001,
+                    "tipo": 1,
+                    "cert": _CERTIFICADO_POR_VENCER,
+                    "registro": _CERTIFICADO_POR_VENCER,
+                    "obs": "Certificación por vencer",
+                },
+                {
+                    "id": 102,
+                    "cod": 2002,
+                    "tipo": 1,
+                    "cert": _CERTIFICADO_VENCIDO,
+                    "registro": _CERTIFICADO_VENCIDO,
+                    "obs": "Certificación vencida",
+                },
+            ],
         )
         conexion.execute(
             text("INSERT INTO fact_reincidencia VALUES (:id, :cod, :imp, :comp, :fi, :ff, :det)"),
@@ -397,7 +497,9 @@ def test_construir_condiciones_dias_vencer(repositorio: ReportesRepository) -> N
     )
 
     # Assert
-    assert condiciones == ["l.vencimiento::date BETWEEN CURRENT_DATE AND CURRENT_DATE + :dias"]
+    assert condiciones == [
+        "DATE(l.vencimiento) BETWEEN DATE('now') AND DATE('now', '+' || :dias || ' days')"
+    ]
     assert parametros == {"dias": 30}
 
 
@@ -503,6 +605,54 @@ def test_ejecutar_reporte_reincidencias(repositorio: ReportesRepository) -> None
     assert resultado["Determinacion"].tolist() == ["advertencia"]
 
 
+@pytest.mark.parametrize("id_reporte", _IDS_REPORTES)
+def test_ejecutar_los_ocho_reportes(repositorio: ReportesRepository, id_reporte: str) -> None:
+    """S-03/CA-02/CA-03: los ocho reportes se ejecutan sin errores en SQLite."""
+    # Arrange
+    definicion = next(d for d in repositorio.listar_reportes() if d.id == id_reporte)
+
+    # Act
+    resultado = repositorio.ejecutar_reporte(id_reporte, SeleccionFiltros())
+
+    # Assert
+    assert isinstance(resultado, pd.DataFrame)
+    assert list(resultado.columns) == list(definicion.columnas)
+
+
+def test_ejecutar_reporte_licencias_vencer(repositorio: ReportesRepository) -> None:
+    """CA-02: el reporte de licencias por vencer calcula los días restantes."""
+    # Arrange / Act
+    resultado = repositorio.ejecutar_reporte("licencias_vencer", SeleccionFiltros())
+
+    # Assert
+    assert resultado["Codigo"].tolist() == [2001]
+    assert resultado["Vencimiento"].tolist() == [_VENCIMIENTO_LICENCIA]
+    assert resultado["Dias Restantes"].tolist()[0] > 0
+
+
+def test_ejecutar_reporte_certificados_vencer(repositorio: ReportesRepository) -> None:
+    """CA-02: el último certificado por código alimenta el reporte por vencer."""
+    # Arrange
+    seleccion = SeleccionFiltros(dias_vencer=90)
+
+    # Act
+    resultado = repositorio.ejecutar_reporte("certificados_vencer", seleccion)
+
+    # Assert
+    assert resultado["Codigo"].tolist() == [2001]
+    assert 0 < resultado["Dias Restantes"].tolist()[0] <= 90
+
+
+def test_ejecutar_reporte_certificados_vencidos(repositorio: ReportesRepository) -> None:
+    """CA-02: los certificados con vigencia cumplida se listan como vencidos."""
+    # Arrange / Act
+    resultado = repositorio.ejecutar_reporte("certificados_vencidos", SeleccionFiltros())
+
+    # Assert
+    assert resultado["Codigo"].tolist() == [2002]
+    assert resultado["Dias Vencido"].tolist()[0] > 0
+
+
 # --- RF-03: exportaciones y auditoría ----------------------------------------
 def test_generar_excel_y_csv() -> None:
     """RF-03: se generan archivos Excel y CSV válidos en memoria."""
@@ -567,6 +717,17 @@ def test_repositorio_encapsula_la_sql() -> None:
     # Act / Assert
     assert "SELECT" in contenido
     assert "INSERT INTO LOG_AUDITORIA" in contenido
+
+
+def test_repositorio_sin_sintaxis_postgres() -> None:
+    """CA-01: el repositorio no conserva tokens nativos de PostgreSQL."""
+    # Arrange
+    contenido = _RUTA_REPOSITORIO.read_text(encoding="utf-8").upper()
+
+    # Act / Assert
+    assert "::" not in contenido
+    assert "INTERVAL" not in contenido
+    assert "DISTINCT ON" not in contenido
 
 
 def test_pagina_usa_render_reportes_sin_exec() -> None:

@@ -816,6 +816,13 @@ vencer, eventos, reincidencias y comportamientos), la auditoría de exportacione
 y la construcción de Excel/CSV en memoria. Las columnas de los filtros viven
 aquí, nunca en la UI.
 
+La spec 022 hace **todas** las consultas 100 % compatibles con SQLite: usa
+`DATE(columna)` y modificadores de fecha (`DATE(fecha, '+3 years')`) en lugar de
+la sintaxis PostgreSQL, calcula diferencias de días con `JULIANDAY`, expresa el
+filtro de vencimiento como `DATE('now', '+' || :dias || ' days')` y sustituye la
+selección distinta de certificados por `ROW_NUMBER() OVER (PARTITION BY id_codigo
+ORDER BY fecha_certificado DESC)` filtrando `rn = 1`.
+
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
 | `ReportesRepository.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa el repositorio inyectando el motor. | — |
@@ -838,7 +845,9 @@ DTOs: `EmpresaInfo`, `TipologiaInfo`, `TipoEventoInfo`, `ImpactoInfo`,
 `DefinicionFiltro`, `DefinicionReporte` y `SeleccionFiltros` (entrada).
 Constantes: `TIPO_MIME_EXCEL`, `TIPO_MIME_CSV`, `ACCION_EXPORTAR_REPORTE`,
 `OPCIONES_ESTADO`, `OPCIONES_ESTADO_ACTIVO`, `ESTADO_A_VIGENCIA` y los límites de
-`dias_vencer`.
+`dias_vencer`. La spec 022 añade las expresiones de fecha portables
+`_MODIFICADOR_VIGENCIA`, `_COL_VENCIMIENTO_LICENCIA`, `_COL_FECHA_EVENTOS`,
+`_COL_VENCIMIENTO_CERTIFICADO` y `_SUBCONSULTA_ULTIMO_CERTIFICADO`.
 
 ### Módulo `reportes` — `src/certificado_operadores/modulos/reportes/ui.py`
 
@@ -863,12 +872,16 @@ invoca; la página queda 100% libre de `exec`, cerrando la Fase 3).
 ### Módulo `reportes` — pruebas
 
 - **Ubicación:** `tests/test_reportes.py`
-- **Cobertura:** repositorio contra SQLite temporal (catálogos de filtros y
-  ejecución de reportes con filtro de empresa y actividad), funciones puras
-  (condiciones por tipo de filtro, construcción de consulta, descripción de
-  tipologías y generación de Excel/CSV), auditoría de exportación y criterios
-  estáticos (paquete CA-01, UI sin SQL RNF-01, repositorio que encapsula la SQL
-  CA-03, página sin `exec` con `render_reportes` CA-02/RNF-02). Patrón AAA.
+- **Cobertura:** repositorio contra SQLite temporal (catálogos de filtros,
+  ejecución de reportes con filtro de empresa y actividad, y de la spec 022 la
+  ejecución de **los ocho reportes** —incluidos licencias por vencer y
+  certificados por vencer/vencidos con fechas relativas al día— verificando que
+  ninguno arroje errores de sintaxis SQLite), funciones puras (condiciones por
+  tipo de filtro, construcción de consulta, descripción de tipologías y
+  generación de Excel/CSV), auditoría de exportación y criterios estáticos
+  (paquete CA-01, UI sin SQL RNF-01, repositorio que encapsula la SQL CA-03 y
+  sin sintaxis PostgreSQL CA-01, página sin `exec` con `render_reportes`
+  CA-02/RNF-02). Patrón AAA.
 
 ## Detalle
 
