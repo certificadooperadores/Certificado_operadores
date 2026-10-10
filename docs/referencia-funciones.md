@@ -97,7 +97,10 @@ Punto de entrada: `src/certificado_operadores/pages/2_Administracion_Operadores.
 - **Ubicación:** `tests/test_admin_operadores_ui.py`
 - **Cobertura:** `parsear_cedula`, `construir_valores_formulario` (creación y
   actualización), ausencia de SQL/conexión directa en la UI (RNF-01), uso del
-  `OperadoresFacade` (CA-01) y compilación de la página (CA-03). Patrón AAA.
+  `OperadoresFacade` (CA-01), compilación de la página (CA-03), delegación real
+  de la búsqueda por cédula en el Facade (RF-01), autocompletado del formulario
+  con el `OperadorInfo` (RF-02) y el caso de borde de operador no encontrado
+  (estado "Creación"). Patrón AAA con un doble de Facade y un doble de Streamlit.
 
 ## Detalle
 
