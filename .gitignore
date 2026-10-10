@@ -23,9 +23,8 @@ coverage.xml
 *.pem
 *.key
 
-# Artefactos pesados / datos (revisar caso a caso)
-data/raw/
-data/processed/
+# Artefactos pesados / datos (almacenados externamente en SharePoint)
+data/
 artifacts/
 *.h5
 *.pt

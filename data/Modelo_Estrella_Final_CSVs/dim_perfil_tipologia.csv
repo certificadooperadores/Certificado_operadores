@@ -1,5 +1,0 @@
-﻿id_perfil_tipologia,autoriza_articulado,autoriza_padron,autoriza_complementario,autoriza_auxiliar,id_vigencia,fecha_registro
-1,True,True,True,False,1,2026-07-20 19:04:45
-2,False,True,True,False,1,2026-07-20 19:04:45
-3,False,False,True,False,1,2026-07-20 19:04:45
-4,False,False,False,True,1,2026-07-20 19:04:45
