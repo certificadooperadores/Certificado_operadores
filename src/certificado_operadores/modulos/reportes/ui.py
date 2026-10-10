@@ -622,11 +622,11 @@ def _render_graficos_analiticos(df: pd.DataFrame, definicion: DefinicionReporte)
         st.altair_chart(chart_venc, use_container_width=True)
 
     elif definicion.id == "comportamientos_operador":
-        st.markdown("#### 📈 Analítica Dinámica de Comportamientos y Operación")
+        st.markdown("#### 📈 Analítica Dinámica Cruzada de Comportamientos (Power BI Style)")
         st.caption(
-            "💡 **Interactivo:** Haz clic en una barra de operador para filtrar "
-            "automáticamente sus causales y rutas asociadas (tipo Power BI). "
-            "Haz clic fuera o presiona Shift+clic para restablecer."
+            "💡 **Interacción Total Cruzada:** Haz clic en cualquier barra "
+            "(Operador, Causal o Ruta) para filtrar las otras dos gráficas dinámicamente. "
+            "Haz clic fuera para restablecer."
         )
 
         copia_comp = df.copy()
@@ -637,24 +637,34 @@ def _render_graficos_analiticos(df: pd.DataFrame, definicion: DefinicionReporte)
             return partes[-1].capitalize() if partes else "Sin causal"
 
         copia_comp["Causal"] = copia_comp["Descripcion"].apply(_extraer_causal)
-        copia_comp["Operador"] = (
-            copia_comp["Codigo"].astype(str) + " - " + copia_comp["Nombre"].astype(str)
-        )
+        # Excluir registros sin operador asignado para el ranking de operadores
+        def _formatear_operador(fila: pd.Series) -> str:
+            cod = fila.get("Codigo")
+            nom = fila.get("Nombre")
+            if pd.isna(cod) or str(cod).strip() in ("", "None", "nan", "null"):
+                return "Sin Operador Identificado"
+            try:
+                cod_int = int(float(cod))
+                return f"{cod_int} - {nom}" if pd.notna(nom) else str(cod_int)
+            except (ValueError, TypeError):
+                return f"{cod} - {nom}" if pd.notna(nom) else str(cod)
+
+        copia_comp["Operador"] = copia_comp.apply(_formatear_operador, axis=1)
         copia_comp["Ruta"] = copia_comp["Ruta"].fillna("Sin Ruta").astype(str)
 
-        # Selector interactivo sobre el Operador
-        selector_operador = alt.selection_point(
-            name="filtro_operador",
-            fields=["Operador"],
-            empty=True,
-        )
+        # Selectores interactivos para cada una de las 3 dimensiones
+        sel_operador = alt.selection_point(name="sel_operador", fields=["Operador"], empty=True)
+        sel_causal = alt.selection_point(name="sel_causal", fields=["Causal"], empty=True)
+        sel_ruta = alt.selection_point(name="sel_ruta", fields=["Ruta"], empty=True)
 
-        # Fuente común de datos
         base = alt.Chart(copia_comp)
 
-        # 1. Gráfico Top 10 Operadores con control de opacidad según selección
+        # 1. Gráfico Operadores (filtrado por Causal y Ruta)
         chart_ops = (
-            base.transform_aggregate(Novedades="count()", groupby=["Operador"])
+            base.transform_filter(sel_causal)
+            .transform_filter(sel_ruta)
+            .transform_filter(alt.datum.Operador != "Sin Operador Identificado")
+            .transform_aggregate(Novedades="count()", groupby=["Operador"])
             .transform_window(
                 rank="rank()",
                 sort=[alt.SortField("Novedades", order="descending")],
@@ -665,7 +675,7 @@ def _render_graficos_analiticos(df: pd.DataFrame, definicion: DefinicionReporte)
                 x=alt.X("Novedades:Q", title="Total Novedades"),
                 y=alt.Y("Operador:N", title="Operador", sort="-x"),
                 color=alt.condition(
-                    selector_operador,
+                    sel_operador,
                     alt.value("#D97706"),
                     alt.value("#FDE68A"),
                 ),
@@ -674,34 +684,42 @@ def _render_graficos_analiticos(df: pd.DataFrame, definicion: DefinicionReporte)
                     alt.Tooltip("Novedades:Q", title="Novedades"),
                 ],
             )
-            .add_params(selector_operador)
-            .properties(width=340, height=300, title="Top 10 Operadores (Clic para filtrar)")
+            .add_params(sel_operador)
+            .properties(width=340, height=300, title="Top 10 Operadores")
         )
 
-        # 2. Gráfico Causales filtrado dinámicamente por el operador seleccionado
+        # 2. Gráfico Causales (filtrado por Operador y Ruta)
         chart_causas = (
-            base.transform_filter(selector_operador)
+            base.transform_filter(sel_operador)
+            .transform_filter(sel_ruta)
             .transform_aggregate(Casos="count()", groupby=["Causal"])
             .transform_window(
                 rank="rank()",
                 sort=[alt.SortField("Casos", order="descending")],
             )
             .transform_filter(alt.datum.rank <= 8)
-            .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#4F46E5")
+            .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
             .encode(
                 x=alt.X("Casos:Q", title="Frecuencia"),
                 y=alt.Y("Causal:N", title="Causal", sort="-x"),
+                color=alt.condition(
+                    sel_causal,
+                    alt.value("#4F46E5"),
+                    alt.value("#C7D2FE"),
+                ),
                 tooltip=[
                     alt.Tooltip("Causal:N", title="Causal"),
                     alt.Tooltip("Casos:Q", title="Casos"),
                 ],
             )
-            .properties(width=320, height=300, title="Causales del Operador")
+            .add_params(sel_causal)
+            .properties(width=320, height=300, title="Causales Más Frecuentes")
         )
 
-        # 3. Gráfico Rutas filtrado dinámicamente por el operador seleccionado
+        # 3. Gráfico Rutas (filtrado por Operador y Causal)
         chart_rutas = (
-            base.transform_filter(selector_operador)
+            base.transform_filter(sel_operador)
+            .transform_filter(sel_causal)
             .transform_filter(alt.datum.Ruta != "Sin Ruta")
             .transform_aggregate(Eventos="count()", groupby=["Ruta"])
             .transform_window(
@@ -709,16 +727,22 @@ def _render_graficos_analiticos(df: pd.DataFrame, definicion: DefinicionReporte)
                 sort=[alt.SortField("Eventos", order="descending")],
             )
             .transform_filter(alt.datum.rank <= 10)
-            .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#059669")
+            .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
             .encode(
                 x=alt.X("Eventos:Q", title="Eventos"),
                 y=alt.Y("Ruta:N", title="Ruta", sort="-x"),
+                color=alt.condition(
+                    sel_ruta,
+                    alt.value("#059669"),
+                    alt.value("#A7F3D0"),
+                ),
                 tooltip=[
                     alt.Tooltip("Ruta:N", title="Ruta"),
                     alt.Tooltip("Eventos:Q", title="Eventos"),
                 ],
             )
-            .properties(width=320, height=300, title="Rutas del Operador")
+            .add_params(sel_ruta)
+            .properties(width=320, height=300, title="Top 10 Rutas Afectadas")
         )
 
         dashboard_interactivo = alt.hconcat(chart_ops, chart_causas, chart_rutas).resolve_scale(
