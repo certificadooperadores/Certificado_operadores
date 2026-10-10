@@ -3,17 +3,14 @@ import streamlit as st
 import pandas as pd
 from sqlalchemy import create_engine, text
 
-# 1. Leer credenciales de la BD (Docker las inyecta solas)
-DB_HOST = os.getenv('DB_HOST', 'localhost')
-DB_PORT = os.getenv('DB_PORT', '5432')
-DB_USER = os.getenv('DB_USER', '')
-DB_PASSWORD = os.getenv('DB_PASSWORD', '')
-DB_NAME = os.getenv('DB_NAME', '')
+# 1. Ruta absoluta a la base de datos local SQLite (en la raíz del proyecto)
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+DB_PATH = os.path.join(BASE_DIR, "operadores.db")
 
 @st.cache_resource
 def get_engine():
-    """Retorna el motor de conexión a PostgreSQL"""
-    engine_url = f"postgresql://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+    """Retorna el motor de conexión a SQLite local"""
+    engine_url = f"sqlite:///{DB_PATH}"
     return create_engine(engine_url)
 
 def get_connection():

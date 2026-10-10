@@ -1,0 +1,8 @@
+﻿id_tipo_evento,nombre_evento,id_vigencia,fecha_registro
+1,certificacion,1,2026-07-20 19:04:45
+2,reactivacion,1,2026-07-20 19:04:45
+3,renovacion,1,2026-07-20 19:04:45
+4,observacion,1,2026-07-20 19:04:45
+5,restriccion medica,1,2026-07-20 19:04:45
+6,suspension,1,2026-07-20 19:04:45
+7,cancelacion,1,2026-07-20 19:04:45
