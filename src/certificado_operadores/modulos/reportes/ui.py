@@ -558,10 +558,15 @@ def _render_graficos_analiticos(df: pd.DataFrame, definicion: DefinicionReporte)
             res_emp = df.groupby("Empresa")["Codigos"].sum().reset_index(name="Total")
             chart_emp = (
                 alt.Chart(res_emp)
-                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#1E3A8A")
+                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
                 .encode(
                     x=alt.X("Total:Q", title="Operadores Activos"),
                     y=alt.Y("Empresa:N", title="Concesionario", sort="-x"),
+                    color=alt.Color(
+                        "Empresa:N",
+                        scale=alt.Scale(scheme="tableau10"),
+                        legend=None,
+                    ),
                     tooltip=[
                         alt.Tooltip("Empresa:N", title="Concesionario"),
                         alt.Tooltip("Total:Q", title="Total Activos"),
@@ -574,12 +579,21 @@ def _render_graficos_analiticos(df: pd.DataFrame, definicion: DefinicionReporte)
         with col_graf2:
             st.markdown("**Activos por Tipología**")
             res_tip = df.groupby("Tipologia")["Codigos"].sum().reset_index(name="Total")
+            scale_tip = alt.Scale(
+                domain=["Articulado", "Padrón", "Complementario"],
+                range=["#2563EB", "#0D9488", "#F59E0B"],
+            )
             chart_tip = (
                 alt.Chart(res_tip)
-                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#0284C7")
+                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
                 .encode(
                     x=alt.X("Total:Q", title="Operadores Activos"),
                     y=alt.Y("Tipologia:N", title="Tipología", sort="-x"),
+                    color=alt.Color(
+                        "Tipologia:N",
+                        scale=scale_tip,
+                        legend=None,
+                    ),
                     tooltip=[
                         alt.Tooltip("Tipologia:N", title="Tipología"),
                         alt.Tooltip("Total:Q", title="Total Activos"),

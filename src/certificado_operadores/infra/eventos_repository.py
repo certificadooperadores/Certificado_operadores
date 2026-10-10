@@ -19,7 +19,7 @@ from __future__ import annotations
 import re
 from dataclasses import dataclass
 from datetime import date, timedelta
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from sqlalchemy import bindparam, text
 
@@ -905,7 +905,7 @@ def _definicion(clave: str) -> DefinicionTabla:
     raise ValueError(f"Tabla de corrección desconocida: {clave}")
 
 
-def _sql_listar(definicion: DefinicionTabla) -> TextClause:
+def _sql_listar(definicion: DefinicionTabla, id_tipo_evento: int | None = None) -> TextClause:
     """Construye la consulta que lista los registros de una tabla.
 
     Las columnas visibles se aliasan por posición (``col_0``, ``col_1``…) para
@@ -913,6 +913,7 @@ def _sql_listar(definicion: DefinicionTabla) -> TextClause:
 
     Args:
         definicion: Metadatos de la tabla a listar.
+        id_tipo_evento: Identificador de tipo de evento para filtrar en la consulta (opcional).
 
     Returns:
         La sentencia parametrizada con ``:limite``.
@@ -920,10 +921,13 @@ def _sql_listar(definicion: DefinicionTabla) -> TextClause:
     columnas = ", ".join(
         f"{columna.expresion} AS col_{indice}" for indice, columna in enumerate(definicion.columnas)
     )
+    where_extra = ""
+    if id_tipo_evento is not None and definicion.clave == CLAVE_TABLA_EVENTOS:
+        where_extra = "WHERE e.id_tipo_evento = :id_tipo_evento"
     return text(
         f"SELECT {definicion.alias}.{definicion.columna_id} AS id_registro, "
         f"{definicion.columna_vigencia} AS id_vigencia, {columnas} "
-        f"{definicion.desde} ORDER BY {definicion.orden} LIMIT :limite"
+        f"{definicion.desde} {where_extra} ORDER BY {definicion.orden} LIMIT :limite"
     )
 
 
@@ -1191,13 +1195,19 @@ class EventosRepository:
         with self.motor.begin() as conexion:
             self._auditar(conexion, usuario, accion, detalles)
 
-    def listar_registros(self, clave: str, limite: int = LIMITE_POR_DEFECTO) -> list[RegistroInfo]:
+    def listar_registros(
+        self,
+        clave: str,
+        limite: int = LIMITE_POR_DEFECTO,
+        id_tipo_evento: int | None = None,
+    ) -> list[RegistroInfo]:
         """Lista, de forma compacta, los registros de una tabla soportada.
 
         Args:
             clave: Identificador corto de la tabla (``eventos``, ``licencias``,
                 ``comportamientos`` u ``operadores``).
             limite: Número máximo de filas a devolver.
+            id_tipo_evento: Identificador de tipo de evento para filtrar en SQL (opcional).
 
         Returns:
             Las filas de la tabla, en el orden definido por su catálogo.
@@ -1206,8 +1216,13 @@ class EventosRepository:
             ValueError: Si la clave no corresponde a una tabla soportada.
         """
         definicion = _definicion(clave)
+        params: dict[str, Any] = {"limite": limite}
+        if id_tipo_evento is not None and definicion.clave == CLAVE_TABLA_EVENTOS:
+            params["id_tipo_evento"] = id_tipo_evento
         with self.motor.connect() as conexion:
-            filas = conexion.execute(_sql_listar(definicion), {"limite": limite}).mappings().all()
+            filas = (
+                conexion.execute(_sql_listar(definicion, id_tipo_evento), params).mappings().all()
+            )
         return [_mapear_registro(definicion, fila) for fila in filas]
 
     def mutar_vigencia(self, clave: str, ids: list[int], vigencia: int, usuario: str) -> int:

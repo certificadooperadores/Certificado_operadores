@@ -41,22 +41,35 @@ inyectar_estilos_metrocali()
 # Restaura la sesión desde el token de la URL (spec 013) antes de decidir si se
 # muestra el login. Si el token expiró, ``gestionar_sesion_activa`` ya lo limpia.
 if not gestionar_sesion_activa():
-    st.title("Plataforma de Gestión de Operadores")
-    st.subheader("Iniciar Sesión")
-    with st.form("login"):
-        u = st.text_input("Usuario")
-        p = st.text_input("Contraseña", type="password")
-        if st.form_submit_button("Ingresar"):
-            fachada = UsuariosFacade()
-            resultado = fachada.autenticar(u, p)
-            if resultado.exito:
-                st.session_state["logged_in"] = True
-                st.session_state["usuario"] = u
-                st.session_state["rol"] = resultado.rol
-                st.query_params["session"] = fachada.generar_token_sesion(u, resultado.rol)
-                st.rerun()
-            else:
-                st.error(f"❌ {resultado.mensaje}")
+    col_izq, col_centro, col_der = st.columns([1, 1.3, 1])
+    with col_centro:
+        st.markdown("<div style='height: 40px;'></div>", unsafe_allow_html=True)
+        st.markdown(
+            """
+            <div style="text-align: center; margin-bottom: 24px;">
+                <h1 style="font-size: 26px; color: #1E3A8A; margin-bottom: 4px;">Plataforma MIO</h1>
+                <p style="font-size: 15px; color: #64748B; margin: 0;">
+                    Gestión de Certificados de Operadores
+                </p>
+            </div>
+            """,
+            unsafe_allow_html=True,
+        )
+        with st.form("login"):
+            st.markdown("### Iniciar Sesión")
+            u = st.text_input("Usuario", placeholder="Tu nombre de usuario")
+            p = st.text_input("Contraseña", type="password", placeholder="••••••••")
+            if st.form_submit_button("Ingresar", type="primary", use_container_width=True):
+                fachada = UsuariosFacade()
+                resultado = fachada.autenticar(u, p)
+                if resultado.exito:
+                    st.session_state["logged_in"] = True
+                    st.session_state["usuario"] = u
+                    st.session_state["rol"] = resultado.rol
+                    st.query_params["session"] = fachada.generar_token_sesion(u, resultado.rol)
+                    st.rerun()
+                else:
+                    st.error(f"❌ {resultado.mensaje}")
     st.stop()
 
 render_controles_sesion_lateral(pagina_inicio=True)

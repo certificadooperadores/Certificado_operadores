@@ -676,13 +676,9 @@ def _render_tabla(
         opciones_descripcion: Descripciones oficiales para la lista desplegable.
     """
     _render_mensaje(definicion)
-    registros = repositorio.listar_registros(definicion.clave)
-    if not registros:
-        st.info(f"No hay registros en {definicion.etiqueta.lower()}.")
-        return
-
     opciones_tipo_evento = opciones_evento([tipo.nombre_evento for tipo in tipos_evento])
     nombre_tipo = ""
+    id_tipo: int | None = None
     if definicion.clave == CLAVE_TABLA_EVENTOS:
         seleccion = st.selectbox(
             ETIQUETA_TIPO_EVENTO,
@@ -693,9 +689,17 @@ def _render_tabla(
             st.caption(MENSAJE_RESTRICCIONES_EVENTO)
         else:
             nombre_tipo = seleccion
-        definicion = columnas_por_tipo_evento(
-            definicion, id_tipo_evento_por_nombre(tipos_evento, nombre_tipo)
-        )
+            id_tipo = id_tipo_evento_por_nombre(tipos_evento, nombre_tipo)
+        definicion = columnas_por_tipo_evento(definicion, id_tipo)
+
+    registros = (
+        repositorio.listar_registros(definicion.clave, id_tipo_evento=id_tipo)
+        if definicion.clave == CLAVE_TABLA_EVENTOS
+        else repositorio.listar_registros(definicion.clave)
+    )
+    if not registros:
+        st.info(f"No hay registros en {definicion.etiqueta.lower()}.")
+        return
 
     termino = st.text_input(
         ETIQUETA_FILTRO,

@@ -640,11 +640,11 @@ def _render_detalle_casos(repositorio: ComportamientosRepository, usuario: str) 
             key="reinc_caso",
         )
     with col_lim:
-        limite_casos = st.selectbox(
-            "Mostrar",
-            [10, 20, 50, 100],
+        tam_pagina = st.selectbox(
+            "Por página",
+            [10, 20, 50],
             index=1,
-            key="reinc_limite",
+            key="reinc_tam_pag",
         )
 
     if caso_filtro != "Todos":
@@ -674,10 +674,48 @@ def _render_detalle_casos(repositorio: ComportamientosRepository, usuario: str) 
                 use_container_width=True,
             )
 
-    st.caption(
-        f"**{len(df_reinc)} caso(s)** encontrados (mostrando {min(limite_casos, len(df_reinc))})"
-    )
-    for _, rw in df_reinc.head(limite_casos).iterrows():
+    total_casos = len(df_reinc)
+    total_paginas = max(1, (total_casos + tam_pagina - 1) // tam_pagina)
+    pagina_actual = st.session_state.get("reinc_pagina_actual", 1)
+    if pagina_actual > total_paginas:
+        pagina_actual = total_paginas
+        st.session_state["reinc_pagina_actual"] = pagina_actual
+
+    col_info, col_ant, col_pag, col_sig = st.columns([4, 1.2, 2, 1.2])
+    with col_info:
+        inicio = (pagina_actual - 1) * tam_pagina + 1 if total_casos > 0 else 0
+        fin = min(pagina_actual * tam_pagina, total_casos)
+        st.caption(
+            f"**{total_casos} casos** | Mostrando {inicio}-{fin} "
+            f"(Página {pagina_actual} de {total_paginas})"
+        )
+    with col_ant:
+        if st.button(
+            "⬅️ Anterior",
+            disabled=(pagina_actual <= 1),
+            key="btn_reinc_ant",
+            use_container_width=True,
+        ):
+            st.session_state["reinc_pagina_actual"] = pagina_actual - 1
+            st.rerun()
+    with col_pag:
+        st.markdown(
+            f"<p style='text-align: center; margin-top: 8px; font-weight: bold;'>"
+            f"Página {pagina_actual} / {total_paginas}</p>",
+            unsafe_allow_html=True,
+        )
+    with col_sig:
+        if st.button(
+            "Siguiente ➡️",
+            disabled=(pagina_actual >= total_paginas),
+            key="btn_reinc_sig",
+            use_container_width=True,
+        ):
+            st.session_state["reinc_pagina_actual"] = pagina_actual + 1
+            st.rerun()
+
+    filas_pagina = df_reinc.iloc[(pagina_actual - 1) * tam_pagina : pagina_actual * tam_pagina]
+    for _, rw in filas_pagina.iterrows():
         _render_caso(rw, df_detalle, usuario, repositorio)
 
 
