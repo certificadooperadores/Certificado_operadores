@@ -622,91 +622,109 @@ def _render_graficos_analiticos(df: pd.DataFrame, definicion: DefinicionReporte)
         st.altair_chart(chart_venc, use_container_width=True)
 
     elif definicion.id == "comportamientos_operador":
-        st.markdown("#### 📈 Analítica de Comportamientos y Operación")
-        col_c1, col_c2, col_c3 = st.columns(3)
-        with col_c1:
-            st.markdown("**Top 10 Operadores con más Novedades**")
-            top_ops = (
-                df.groupby(["Codigo", "Nombre"])
-                .size()
-                .reset_index(name="Novedades")
-                .sort_values(by="Novedades", ascending=False)
-                .head(10)
-            )
-            top_ops["Operador"] = (
-                top_ops["Codigo"].astype(str) + " - " + top_ops["Nombre"].astype(str)
-            )
-            chart_ops = (
-                alt.Chart(top_ops)
-                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#D97706")
-                .encode(
-                    x=alt.X("Novedades:Q", title="Total Novedades"),
-                    y=alt.Y("Operador:N", title="Operador", sort="-x"),
-                    tooltip=[
-                        alt.Tooltip("Operador:N", title="Operador"),
-                        alt.Tooltip("Novedades:Q", title="Novedades"),
-                    ],
-                )
-                .properties(height=280)
-            )
-            st.altair_chart(chart_ops, use_container_width=True)
+        st.markdown("#### 📈 Analítica Dinámica de Comportamientos y Operación")
+        st.caption(
+            "💡 **Interactivo:** Haz clic en una barra de operador para filtrar "
+            "automáticamente sus causales y rutas asociadas (tipo Power BI). "
+            "Haz clic fuera o presiona Shift+clic para restablecer."
+        )
 
-        with col_c2:
-            st.markdown("**Causales Más Frecuentes**")
-            copia_comp = df.copy()
+        copia_comp = df.copy()
 
-            # Extraer la causal raíz o nivel clave después de ::
-            def _extraer_causal(desc: str) -> str:
-                partes = [p.strip() for p in str(desc).split("::") if p.strip()]
-                return partes[-1].capitalize() if partes else "Sin causal"
+        # Extraer la causal raíz o nivel clave después de ::
+        def _extraer_causal(desc: str) -> str:
+            partes = [p.strip() for p in str(desc).split("::") if p.strip()]
+            return partes[-1].capitalize() if partes else "Sin causal"
 
-            copia_comp["Causal"] = copia_comp["Descripcion"].apply(_extraer_causal)
-            top_causas = (
-                copia_comp.groupby("Causal")
-                .size()
-                .reset_index(name="Casos")
-                .sort_values(by="Casos", ascending=False)
-                .head(8)
-            )
-            chart_causas = (
-                alt.Chart(top_causas)
-                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#4F46E5")
-                .encode(
-                    x=alt.X("Casos:Q", title="Frecuencia"),
-                    y=alt.Y("Causal:N", title="Causal", sort="-x"),
-                    tooltip=[
-                        alt.Tooltip("Causal:N", title="Causal"),
-                        alt.Tooltip("Casos:Q", title="Casos"),
-                    ],
-                )
-                .properties(height=280)
-            )
-            st.altair_chart(chart_causas, use_container_width=True)
+        copia_comp["Causal"] = copia_comp["Descripcion"].apply(_extraer_causal)
+        copia_comp["Operador"] = (
+            copia_comp["Codigo"].astype(str) + " - " + copia_comp["Nombre"].astype(str)
+        )
+        copia_comp["Ruta"] = copia_comp["Ruta"].fillna("Sin Ruta").astype(str)
 
-        with col_c3:
-            st.markdown("**Top 10 Rutas con Más Novedades**")
-            top_rutas = (
-                df[df["Ruta"].notna() & (df["Ruta"] != "")]
-                .groupby("Ruta")
-                .size()
-                .reset_index(name="Eventos")
-                .sort_values(by="Eventos", ascending=False)
-                .head(10)
+        # Selector interactivo sobre el Operador
+        selector_operador = alt.selection_point(
+            name="filtro_operador",
+            fields=["Operador"],
+            empty=True,
+        )
+
+        # Fuente común de datos
+        base = alt.Chart(copia_comp)
+
+        # 1. Gráfico Top 10 Operadores con control de opacidad según selección
+        chart_ops = (
+            base.transform_aggregate(Novedades="count()", groupby=["Operador"])
+            .transform_window(
+                rank="rank()",
+                sort=[alt.SortField("Novedades", order="descending")],
             )
-            chart_rutas = (
-                alt.Chart(top_rutas)
-                .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#059669")
-                .encode(
-                    x=alt.X("Eventos:Q", title="Eventos"),
-                    y=alt.Y("Ruta:N", title="Ruta", sort="-x"),
-                    tooltip=[
-                        alt.Tooltip("Ruta:N", title="Ruta"),
-                        alt.Tooltip("Eventos:Q", title="Eventos"),
-                    ],
-                )
-                .properties(height=280)
+            .transform_filter(alt.datum.rank <= 10)
+            .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4)
+            .encode(
+                x=alt.X("Novedades:Q", title="Total Novedades"),
+                y=alt.Y("Operador:N", title="Operador", sort="-x"),
+                color=alt.condition(
+                    selector_operador,
+                    alt.value("#D97706"),
+                    alt.value("#FDE68A"),
+                ),
+                tooltip=[
+                    alt.Tooltip("Operador:N", title="Operador"),
+                    alt.Tooltip("Novedades:Q", title="Novedades"),
+                ],
             )
-            st.altair_chart(chart_rutas, use_container_width=True)
+            .add_params(selector_operador)
+            .properties(width=340, height=300, title="Top 10 Operadores (Clic para filtrar)")
+        )
+
+        # 2. Gráfico Causales filtrado dinámicamente por el operador seleccionado
+        chart_causas = (
+            base.transform_filter(selector_operador)
+            .transform_aggregate(Casos="count()", groupby=["Causal"])
+            .transform_window(
+                rank="rank()",
+                sort=[alt.SortField("Casos", order="descending")],
+            )
+            .transform_filter(alt.datum.rank <= 8)
+            .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#4F46E5")
+            .encode(
+                x=alt.X("Casos:Q", title="Frecuencia"),
+                y=alt.Y("Causal:N", title="Causal", sort="-x"),
+                tooltip=[
+                    alt.Tooltip("Causal:N", title="Causal"),
+                    alt.Tooltip("Casos:Q", title="Casos"),
+                ],
+            )
+            .properties(width=320, height=300, title="Causales del Operador")
+        )
+
+        # 3. Gráfico Rutas filtrado dinámicamente por el operador seleccionado
+        chart_rutas = (
+            base.transform_filter(selector_operador)
+            .transform_filter(alt.datum.Ruta != "Sin Ruta")
+            .transform_aggregate(Eventos="count()", groupby=["Ruta"])
+            .transform_window(
+                rank="rank()",
+                sort=[alt.SortField("Eventos", order="descending")],
+            )
+            .transform_filter(alt.datum.rank <= 10)
+            .mark_bar(cornerRadiusTopRight=4, cornerRadiusBottomRight=4, color="#059669")
+            .encode(
+                x=alt.X("Eventos:Q", title="Eventos"),
+                y=alt.Y("Ruta:N", title="Ruta", sort="-x"),
+                tooltip=[
+                    alt.Tooltip("Ruta:N", title="Ruta"),
+                    alt.Tooltip("Eventos:Q", title="Eventos"),
+                ],
+            )
+            .properties(width=320, height=300, title="Rutas del Operador")
+        )
+
+        dashboard_interactivo = alt.hconcat(chart_ops, chart_causas, chart_rutas).resolve_scale(
+            x="independent", y="independent"
+        )
+        st.altair_chart(dashboard_interactivo, use_container_width=True)
 
 
 def _render_resultado(
