@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import io
 import re
+from collections.abc import Iterator
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -22,6 +23,7 @@ import pandas as pd
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.pool import NullPool
 
 from certificado_operadores.infra.comportamientos_repository import (
     ACCION_CARGA_MASIVA_COMPORTAMIENTOS,
@@ -234,12 +236,13 @@ def _sembrar_catalogos(motor: Engine) -> None:
 
 
 @pytest.fixture
-def motor_sqlite(tmp_path: Path) -> Engine:
+def motor_sqlite(tmp_path: Path) -> Iterator[Engine]:
     """Motor SQLite temporal con esquema y catálogos de ejemplo."""
-    motor = create_engine(f"sqlite:///{tmp_path / 'prueba_comportamientos.db'}")
+    motor = create_engine(f"sqlite:///{tmp_path / 'prueba_comportamientos.db'}", poolclass=NullPool)
     _crear_esquema(motor)
     _sembrar_catalogos(motor)
-    return motor
+    yield motor
+    motor.dispose()
 
 
 @pytest.fixture

@@ -13,11 +13,13 @@ Autor: Ing. Miguel Angel Ortiz Roldan
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.pool import NullPool
 
 from certificado_operadores.domain.usuarios import (
     ESTADO_ACTIVO,
@@ -90,12 +92,13 @@ def _sembrar_datos(motor: Engine) -> None:
 
 
 @pytest.fixture
-def motor_sqlite(tmp_path: Path) -> Engine:
+def motor_sqlite(tmp_path: Path) -> Iterator[Engine]:
     """Motor SQLite temporal con esquema y datos de prueba."""
-    motor = create_engine(f"sqlite:///{tmp_path / 'prueba_autenticacion.db'}")
+    motor = create_engine(f"sqlite:///{tmp_path / 'prueba_autenticacion.db'}", poolclass=NullPool)
     _crear_esquema(motor)
     _sembrar_datos(motor)
-    return motor
+    yield motor
+    motor.dispose()
 
 
 @pytest.fixture
@@ -216,76 +219,88 @@ def test_repositorio_obtener_para_autenticacion_inexistente(motor_sqlite: Engine
 
 
 # --- Inicialización resiliente (spec 012) ------------------------------------
-def test_usuarios_repository_auto_crea_tablas_y_admin_en_motor_vacio() -> None:
+def test_usuarios_repository_auto_crea_tablas_y_admin_en_motor_vacio(tmp_path: Path) -> None:
     """CA-01/CA-02: en un motor vacío se crean las tablas y se siembra ``admin``."""
     # Arrange
-    motor = create_engine("sqlite:///:memory:")
+    motor = create_engine(f"sqlite:///{tmp_path / 'vacio_tablas.db'}", poolclass=NullPool)
 
-    # Act
-    repositorio = UsuariosRepository(engine=motor)
-    administrador = repositorio.obtener_usuario("admin")
+    try:
+        # Act
+        repositorio = UsuariosRepository(engine=motor)
+        administrador = repositorio.obtener_usuario("admin")
 
-    # Assert
-    assert administrador is not None
-    assert administrador.usuario == "admin"
-    assert administrador.rol == ROL_SUPER_ADMINISTRADOR
-    assert administrador.estado == ESTADO_ACTIVO
-    with motor.connect() as conexion:
-        tablas = {
-            fila[0]
-            for fila in conexion.execute(
-                text("SELECT name FROM sqlite_master WHERE type = 'table'")
-            )
-        }
-    assert "dim_usuarios" in tablas
-    assert "log_auditoria" in tablas
+        # Assert
+        assert administrador is not None
+        assert administrador.usuario == "admin"
+        assert administrador.rol == ROL_SUPER_ADMINISTRADOR
+        assert administrador.estado == ESTADO_ACTIVO
+        with motor.connect() as conexion:
+            tablas = {
+                fila[0]
+                for fila in conexion.execute(
+                    text("SELECT name FROM sqlite_master WHERE type = 'table'")
+                )
+            }
+        assert "dim_usuarios" in tablas
+        assert "log_auditoria" in tablas
+    finally:
+        motor.dispose()
 
 
-def test_fachada_autentica_admin_sembrado_en_motor_vacio() -> None:
+def test_fachada_autentica_admin_sembrado_en_motor_vacio(tmp_path: Path) -> None:
     """CA-03/RF-04: la fachada autentica al ``admin`` sembrado sobre un motor nuevo."""
     # Arrange
-    motor = create_engine("sqlite:///:memory:")
+    motor = create_engine(f"sqlite:///{tmp_path / 'vacio_fachada.db'}", poolclass=NullPool)
 
-    # Act
-    fachada = UsuariosFacade(engine=motor)
-    resultado = fachada.autenticar("admin", "admin123")
+    try:
+        # Act
+        fachada = UsuariosFacade(engine=motor)
+        resultado = fachada.autenticar("admin", "admin123")
 
-    # Assert
-    assert isinstance(resultado, ResultadoAutenticacion)
-    assert resultado.exito is True
-    assert resultado.mensaje == MENSAJE_LOGIN_EXITOSO
-    assert resultado.rol == ROL_SUPER_ADMINISTRADOR
+        # Assert
+        assert isinstance(resultado, ResultadoAutenticacion)
+        assert resultado.exito is True
+        assert resultado.mensaje == MENSAJE_LOGIN_EXITOSO
+        assert resultado.rol == ROL_SUPER_ADMINISTRADOR
+    finally:
+        motor.dispose()
 
 
-def test_asegurar_tablas_es_idempotente() -> None:
+def test_asegurar_tablas_es_idempotente(tmp_path: Path) -> None:
     """RNF-02: invocar ``asegurar_tablas`` varias veces no duplica al administrador."""
     # Arrange
-    motor = create_engine("sqlite:///:memory:")
+    motor = create_engine(f"sqlite:///{tmp_path / 'idempotente.db'}", poolclass=NullPool)
     repositorio = UsuariosRepository(engine=motor)
 
-    # Act
-    repositorio.asegurar_tablas()
-    repositorio.asegurar_tablas()
+    try:
+        # Act
+        repositorio.asegurar_tablas()
+        repositorio.asegurar_tablas()
 
-    # Assert
-    with motor.connect() as conexion:
-        total = conexion.execute(text("SELECT COUNT(*) FROM dim_usuarios")).scalar_one()
-    assert int(total) == 1
+        # Assert
+        with motor.connect() as conexion:
+            total = conexion.execute(text("SELECT COUNT(*) FROM dim_usuarios")).scalar_one()
+        assert int(total) == 1
+    finally:
+        motor.dispose()
 
 
-def test_log_auditoria_operativo_en_motor_vacio() -> None:
+def test_log_auditoria_operativo_en_motor_vacio(tmp_path: Path) -> None:
     """RF-03: la tabla ``log_auditoria`` creada automáticamente admite escrituras."""
     # Arrange
-    motor = create_engine("sqlite:///:memory:")
+    motor = create_engine(f"sqlite:///{tmp_path / 'auditoria.db'}", poolclass=NullPool)
     repositorio = UsuariosRepository(engine=motor)
 
-    # Act
-    repositorio.registrar_auditoria("admin", "Prueba", "detalle de prueba")
+    try:
+        # Act
+        repositorio.registrar_auditoria("admin", "Prueba", "detalle de prueba")
 
-    # Assert
-    with motor.connect() as conexion:
-        total = conexion.execute(text("SELECT COUNT(*) FROM log_auditoria")).scalar_one()
-    assert int(total) == 1
+        # Assert
+        with motor.connect() as conexion:
+            total = conexion.execute(text("SELECT COUNT(*) FROM log_auditoria")).scalar_one()
+        assert int(total) == 1
+    finally:
+        motor.dispose()
 
 
 # --- Criterios de aceptación verificables ------------------------------------

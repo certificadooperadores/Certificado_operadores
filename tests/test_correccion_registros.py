@@ -22,13 +22,14 @@ Autor: Ing. Miguel Angel Ortiz Roldan
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable
+from collections.abc import Iterable, Iterator
 from datetime import date
 from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
+from sqlalchemy.pool import NullPool
 
 from certificado_operadores.domain.models import VIGENCIA_ACTIVA, VIGENCIA_ANULADA
 from certificado_operadores.domain.usuarios import (
@@ -443,12 +444,13 @@ def _sembrar_datos(motor: Engine) -> None:
 
 
 @pytest.fixture
-def motor_sqlite(tmp_path: Path) -> Engine:
+def motor_sqlite(tmp_path: Path) -> Iterator[Engine]:
     """Motor SQLite temporal con esquema y datos de ejemplo."""
-    motor = create_engine(f"sqlite:///{tmp_path / 'prueba_eventos.db'}")
+    motor = create_engine(f"sqlite:///{tmp_path / 'prueba_eventos.db'}", poolclass=NullPool)
     _crear_esquema(motor)
     _sembrar_datos(motor)
-    return motor
+    yield motor
+    motor.dispose()
 
 
 @pytest.fixture

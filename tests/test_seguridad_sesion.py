@@ -15,10 +15,12 @@ import base64
 import json
 import re
 import time
+from collections.abc import Iterator
 from pathlib import Path
 
 import pytest
 from sqlalchemy import create_engine
+from sqlalchemy.pool import NullPool
 
 from certificado_operadores import ui_sesion
 from certificado_operadores.domain.usuarios import ROL_SUPER_ADMINISTRADOR
@@ -43,9 +45,13 @@ _PAGINAS = ("1_Configuracion.py", "2_Administracion_Operadores.py", "3_Reportes.
 
 
 @pytest.fixture
-def fachada() -> UsuariosFacade:
-    """Fachada de usuarios sobre un motor SQLite en memoria."""
-    return UsuariosFacade(engine=create_engine("sqlite:///:memory:"))
+def fachada(tmp_path: Path) -> Iterator[UsuariosFacade]:
+    """Fachada de usuarios sobre un motor SQLite temporal."""
+    motor = create_engine(f"sqlite:///{tmp_path / 'sesion.db'}", poolclass=NullPool)
+    try:
+        yield UsuariosFacade(engine=motor)
+    finally:
+        motor.dispose()
 
 
 # --- Tokens: generación y validación (spec 013) ------------------------------

@@ -193,6 +193,14 @@ La documentación detallada vive en `docs/` (en español), enlazada desde el
 - **Pruebas tras cada función:** al terminar o aprobar cualquier función o
   desarrollo, se ejecutan las pruebas necesarias. Una tarea no termina hasta que
   las pruebas pasan (verde).
+- **Cero advertencias en pruebas (spec 021):** la suite se ejecuta con el
+  criterio duro `-W error` configurado en `[tool.pytest.ini_options]` de
+  `pyproject.toml`; cualquier advertencia nueva falla la ejecución. Está
+  **prohibido silenciarlas** (`filterwarnings = ["ignore"]`,
+  `@pytest.mark.filterwarnings` o equivalentes). Las conexiones SQLite se cierran
+  en su origen: las fixtures de motor usan `poolclass=NullPool` y ejecutan
+  `motor.dispose()` en el teardown (`yield`), y los motores creados de forma
+  inline se liberan con `motor.dispose()`.
 - **Preguntar antes de empezar y avanzar por partes:** reúne primero toda la
   información y permisos, luego avanza una función por ciclo:
   **implementar → probar → corregir → documentar → commit**.
@@ -246,6 +254,7 @@ git push
 | 2026-10-10 | Perfeccionar `modulos/correccion_registros/ui.py` con barra de **búsqueda rápida** (`st.text_input` por sub-pestaña), casilla `Seleccionar` y **botones de acción en bloque** (`Marcar Vigente`/`Marcar Anulado`/`Eliminar`), listas oficiales de licencias y comportamientos mediante `columna_config.SelectboxColumn`, y añadir a `EventosRepository` el catálogo `codigos` (`dim_codigo`), `OPCIONES_LICENCIA`, los tipos de edición `licencia`/`fuente`/`descripcion`, `listar_fuentes_comportamiento` y `listar_descripciones_comportamiento` | Cumplir la spec 018: filtrar en memoria antes del editor (CA-01), restringir `Tipo` a `C1`/`C2`/`C3` (CA-02) y `Fuente`/`Descripción` al catálogo oficial (CA-03), exponer la sub-pestaña Códigos con operador, empresa y fecha de registro (CA-04) y permitir mutar en bloque las filas seleccionadas conviviendo con Guardar Cambios (CA-05), sin SQL en la UI |
 | 2026-10-10 | Ampliar la definición de la tabla `eventos` de `TABLAS_CORRECCION` en `infra/eventos_repository.py` con las columnas completas de negocio (cinco fechas, evaluador, vehículo evaluado y observación) y sus tipos de edición `fecha`/`texto`/`entero`, protegiendo `Cédula`, `Nombre` y `Registro` | Cumplir la spec 019: exponer y editar en el editor tipo Excel la información oficial de Metrocali (CA-01), persistir los cambios en `fact_eventos_operador` (CA-02), cubrir presencia y edición con pruebas en `tests/test_correccion_registros.py` (CA-03) y mantener `uv run pytest` 100% en verde (CA-04), sin SQL en la UI |
 | 2026-10-10 | Añadir a `infra/eventos_repository.py` la matriz `CAMPOS_PERMITIDOS_POR_EVENTO`, la excepción `CampoIncompatibleError`, el rechazo atómico de campos incompatibles por categoría (S-02), la limpieza a `NULL` de campos huérfanos al mutar el tipo de evento (S-03) y la validación de plausibilidad de fechas (S-04); adaptar `modulos/correccion_registros/ui.py` con un selector de tipo de evento que proyecta columnas y filas (S-05) | Cumplir la spec 020: blindar `fact_eventos_operador` contra fechas incongruentes con la naturaleza del evento, evitar datos residuales al cambiar de categoría y reducir el ruido visual del editor, sin SQL en la UI |
+| 2026-10-10 | Estandarizar las fixtures de motor de `tests/` con `poolclass=NullPool` + `motor.dispose()` en el teardown (`Iterator[Engine]`), liberar con `dispose()` los motores creados inline y fijar `addopts = "-q -W error"` en `pyproject.toml` | Cumplir la spec 021: eliminar en su causa raíz los 161 `ResourceWarning` de SQLite bajo Python 3.13 (cierre limpio de conexiones), prohibir silenciar advertencias y dejar `uv run pytest` y `make check` en verde con 0 advertencias |
 
 ## 10. Notas y tareas pendientes
 

@@ -7,6 +7,7 @@ Todas las pruebas siguen el patrón AAA (*Arrange · Act · Assert*).
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from datetime import date, timedelta
 from pathlib import Path
 from typing import cast
@@ -15,6 +16,7 @@ import pytest
 from sqlalchemy import create_engine, text
 from sqlalchemy.engine import Engine
 from sqlalchemy.exc import SQLAlchemyError
+from sqlalchemy.pool import NullPool
 
 from certificado_operadores.domain.models import (
     EstadisticasBasicas,
@@ -129,12 +131,13 @@ def _sembrar_datos(motor: Engine) -> None:
 
 
 @pytest.fixture
-def motor_sqlite(tmp_path: Path) -> Engine:
+def motor_sqlite(tmp_path: Path) -> Iterator[Engine]:
     """Motor SQLite temporal con esquema y datos de prueba."""
-    motor = create_engine(f"sqlite:///{tmp_path / 'prueba_facade.db'}")
+    motor = create_engine(f"sqlite:///{tmp_path / 'prueba_facade.db'}", poolclass=NullPool)
     _crear_esquema(motor)
     _sembrar_datos(motor)
-    return motor
+    yield motor
+    motor.dispose()
 
 
 @pytest.fixture
@@ -314,12 +317,15 @@ def test_estadisticas_basicas(fachada: OperadoresFacade) -> None:
 def test_estadisticas_basicas_devuelve_ceros_sin_esquema(tmp_path: Path) -> None:
     """Sin tablas cargadas, las estadísticas devuelven ceros sin fallar."""
     # Arrange
-    motor_vacio = create_engine(f"sqlite:///{tmp_path / 'vacio.db'}")
+    motor_vacio = create_engine(f"sqlite:///{tmp_path / 'vacio.db'}", poolclass=NullPool)
     fachada = OperadoresFacade(engine=motor_vacio)
 
-    # Act
-    estadisticas = fachada.estadisticas_basicas()
+    try:
+        # Act
+        estadisticas = fachada.estadisticas_basicas()
 
-    # Assert
-    assert estadisticas.total_operadores == 0
-    assert estadisticas.total_licencias == 0
+        # Assert
+        assert estadisticas.total_operadores == 0
+        assert estadisticas.total_licencias == 0
+    finally:
+        motor_vacio.dispose()
