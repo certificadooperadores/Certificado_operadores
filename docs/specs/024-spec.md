@@ -63,6 +63,10 @@ Tras la implementación de la Spec 023, se identificaron varios problemas de exp
       WHERE id_codigo >= :base AND id_codigo < :limite
       ```
 
+### R-07: Botones de Exportación en la Parte Superior
+- En `src/certificado_operadores/modulos/reportes/ui.py`:
+  - Mover los botones `Exportar a Excel` y `Exportar a CSV` a la cabecera de la tabla (inmediatamente encima de ella, alineados con el resumen de registros o en una barra de acciones superior), evitando que el usuario deba desplazarse verticalmente hasta el final de cientos de filas para exportar.
+
 ## 3. Criterios de Aceptación
 
 - [ ] **CA-01:** `.block-container` no restringe el ancho a 1200px; la aplicación ocupa el ancho completo de pantalla.
@@ -71,4 +75,5 @@ Tras la implementación de la Spec 023, se identificaron varios problemas de exp
 - [ ] **CA-04:** "Licencias por Vencer" y "Certificados por Vencer" incluyen filtro por Empresa Concesionaria.
 - [ ] **CA-05:** Ningún KPI suma identificadores numéricos ni muestra el número de columnas.
 - [ ] **CA-06:** La generación del siguiente código respeta el patrón del concesionario (`10001+` para Git, `20001+` para ByN, `30001+` para ETM, `40001+` para Unimetro).
-- [ ] **CA-07:** `pytest -q -W error` ejecuta con 100% de pruebas en verde y cero advertencias.
+- [ ] **CA-07:** Los botones `Exportar a Excel` y `Exportar a CSV` se ubican en la parte superior, directamente sobre la tabla de datos.
+- [ ] **CA-08:** `pytest -q -W error` ejecuta con 100% de pruebas en verde y cero advertencias.
