@@ -37,8 +37,9 @@
 |-----------------------------------|:------:|
 | Estructura del repositorio y entorno (`uv`) | ✅ |
 | Constitución y gobernanza         | ✅     |
-| Primera funcionalidad             | ⏳     |
-| Suite de pruebas                  | ⏳     |
+| Arquitectura desacoplada (Facade) | ✅     |
+| Módulos operativos y analítica visual | ✅     |
+| Suite de pruebas (388 pruebas verdes) | ✅     |
 
 ## 🛠️ Stack tecnológico
 
