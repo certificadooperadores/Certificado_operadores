@@ -10,6 +10,9 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
+
+import pytest
 
 from certificado_operadores.domain.models import OperadorInfo
 from certificado_operadores.facade import OperadoresFacade
@@ -148,3 +151,116 @@ def test_pagina_compila_sin_errores_de_sintaxis() -> None:
 
     # Act / Assert
     compile(contenido, str(_RUTA_PAGINA), "exec")
+
+
+# --- RF-01 / RF-02 / caso de borde: flujo de consulta ------------------------
+class _FachadaFalsa:
+    """Doble de :class:`OperadoresFacade` que registra las cédulas consultadas."""
+
+    def __init__(self, operador: OperadorInfo | None) -> None:
+        """Guarda el resultado que debe devolver la búsqueda."""
+        self._operador = operador
+        self.cedulas: list[int] = []
+
+    def obtener_operador_por_cedula(self, cedula: int) -> OperadorInfo | None:
+        """Registra la cédula recibida y devuelve el operador configurado."""
+        self.cedulas.append(cedula)
+        return self._operador
+
+
+class _StreamlitFalso:
+    """Doble mínimo de ``streamlit`` que captura los mensajes mostrados."""
+
+    def __init__(self, cedula: str) -> None:
+        """Configura el texto que devolverá el campo de cédula."""
+        self._cedula = cedula
+        self.mensajes_info: list[str] = []
+        self.mensajes_success: list[str] = []
+
+    def text_input(self, etiqueta: str, key: str | None = None) -> str:
+        """Devuelve siempre la cédula configurada."""
+        return self._cedula
+
+    def info(self, mensaje: str) -> None:
+        """Registra un mensaje informativo."""
+        self.mensajes_info.append(mensaje)
+
+    def success(self, mensaje: str) -> None:
+        """Registra un mensaje de éxito."""
+        self.mensajes_success.append(mensaje)
+
+
+def _operador_de_ejemplo() -> OperadorInfo:
+    """Construye un operador de ejemplo como el que entrega el Facade."""
+    return OperadorInfo(
+        codigo=5002,
+        cedula=1002,
+        nombres="Luis",
+        primer_apellido="Rojas",
+        segundo_apellido="Mora",
+        genero="M",
+        id_empresa=2,
+        nombre_empresa="Bnm",
+        id_perfil_tipologia=1,
+        id_vigencia=1,
+    )
+
+
+def test_render_consulta_delega_la_busqueda_en_el_facade(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """RF-01/RF-02: la UI consulta el Facade y autocompleta con el OperadorInfo."""
+    # Arrange
+    fachada = _FachadaFalsa(_operador_de_ejemplo())
+    st_falso = _StreamlitFalso("1002")
+    capturado: list[dict[str, Any]] = []
+    monkeypatch.setattr(ui, "st", st_falso)
+    monkeypatch.setattr(ui, "_render_formulario", capturado.append)
+
+    # Act
+    ui._render_consulta(fachada)  # type: ignore[arg-type]
+
+    # Assert
+    assert fachada.cedulas == [1002]
+    assert capturado[0]["estado"] == ui.ESTADO_ACTUALIZACION
+    assert capturado[0]["nombres"] == "Luis"
+    assert capturado[0]["nombre_empresa"] == "Bnm"
+    assert st_falso.mensajes_success, "Debe anunciar que encontró al operador."
+
+
+def test_render_consulta_muestra_creacion_cuando_no_existe(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Caso de borde: sin operador el Facade devuelve None y la UI muestra Creación."""
+    # Arrange
+    fachada = _FachadaFalsa(None)
+    st_falso = _StreamlitFalso("99999999")
+    capturado: list[dict[str, Any]] = []
+    monkeypatch.setattr(ui, "st", st_falso)
+    monkeypatch.setattr(ui, "_render_formulario", capturado.append)
+
+    # Act
+    ui._render_consulta(fachada)  # type: ignore[arg-type]
+
+    # Assert
+    assert fachada.cedulas == [99999999]
+    assert capturado[0]["estado"] == ui.ESTADO_CREACION
+    assert any("Creación" in mensaje for mensaje in st_falso.mensajes_info)
+
+
+def test_render_consulta_no_consulta_sin_cedula_valida(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Una cédula inválida no llega al Facade."""
+    # Arrange
+    fachada = _FachadaFalsa(None)
+    st_falso = _StreamlitFalso("abc")
+    monkeypatch.setattr(ui, "st", st_falso)
+    monkeypatch.setattr(ui, "_render_formulario", lambda valores: None)
+
+    # Act
+    ui._render_consulta(fachada)  # type: ignore[arg-type]
+
+    # Assert
+    assert fachada.cedulas == []
+    assert st_falso.mensajes_info
