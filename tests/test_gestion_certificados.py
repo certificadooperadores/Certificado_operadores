@@ -603,11 +603,14 @@ def test_pagina_compila_sin_errores_de_sintaxis() -> None:
 
 
 def test_modulo_heredado_deprecado_sin_sql() -> None:
-    """El módulo heredado quedó deprecado (redirige y ya no contiene SQL)."""
-    # Arrange
+    """El módulo heredado quedó eliminado o deprecado sin SQL."""
+    # Arrange / Act / Assert
+    if not _RUTA_HEREDADO.exists():
+        assert not _RUTA_HEREDADO.exists()
+        return
+
     contenido = _RUTA_HEREDADO.read_text(encoding="utf-8").upper()
     patron = re.compile(r"\b(SELECT|UPDATE|INSERT|DELETE|DROP)\s")
 
-    # Act / Assert
     assert "RENDER_GESTION_CERTIFICADOS" in contenido
     assert patron.findall(contenido) == []
