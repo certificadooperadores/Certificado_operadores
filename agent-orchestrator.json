@@ -1,6 +1,6 @@
 {
     "project_dir": ".",
-    "spec": "docs/specs/022-spec.md",
+    "spec": "docs/specs/023-spec.md",
     "temp_dir": "temp_agent",
     "gate": {
         "command": [
