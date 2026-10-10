@@ -90,9 +90,18 @@ Tras la implementación de la Spec 023, se identificaron varios problemas graves
 - En `src/certificado_operadores/infra/reportes_repository.py`:
   - En la consulta del reporte `operadores_empresa`, hacer `JOIN dim_perfil_tipologia t ON dc.id_perfil_tipologia = t.id_perfil_tipologia` y proyectar el nombre legible de la tipología (`t.tipologia` / `t.nombre_tipologia`) como columna `"Tipologia"`.
 
-### R-07: Filtro de Concesionario en Licencias y Certificados por Vencer
+### R-07: Filtro de Concesionario y Diagrama de Gantt Temporal de Vencimientos
 - En los reportes `licencias_vencer` y `certificados_vencer`:
-  - Incorporar selector de filtro por **Empresa Concesionaria** (GIT, ByN, ETM, etc.).
+  - **Filtro de Concesionaria:** Incorporar selector de filtro por Empresa Concesionaria (GIT, ByN, ETM, etc.).
+  - **Diagrama de Gantt de Vencimientos por Concesionario:**
+    - Generado limpiamente con `matplotlib` (dependencia ya instalada en el proyecto) e inyectado con `st.pyplot(fig)`.
+    - **Eje Y:** Empresas Concesionarias (GIT, ByN, ETM, Unimetro).
+    - **Eje X:** Línea temporal de vencimiento (desde la fecha actual hasta los N días seleccionados, ej. 30, 60, 90 días).
+    - **Barras horizontales de Gantt por criticidad:**
+      - Crítico (Rojo `#EF4444`): Vence en menos de 30 días.
+      - Alerta (Ámbar `#F59E0B`): Vence entre 30 y 60 días.
+      - Normal (Azul institucional `#046BD2`): Vence en más de 60 días.
+    - Permite al usuario ver de un solo vistazo el cronograma de vencimiento de licencias y certificados por concesionario en el tiempo.
 
 ### R-08: Generación de Códigos según Patrón de Concesionario (COT)
 - En `src/certificado_operadores/infra/repository.py`:
