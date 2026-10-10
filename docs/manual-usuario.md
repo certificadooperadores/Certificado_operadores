@@ -205,4 +205,4 @@ Para inicializaciones masivas o migraciones desde hojas de cálculo instituciona
 ---
 
 **Autor:** Ing. Miguel Angel Ortiz Roldan  
-**Institución:** Metrocali S.A. — Sistema Integrado de Transporte Masivo (MIO)
+**Institución:** Metrocali S.A. — Dirección de Operación - Evaluación de la Operación
