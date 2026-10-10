@@ -1,6 +1,7 @@
 import streamlit as st
+from db import registrar_auditoria, run_query, run_transaction
+from modulos.gestion_usuarios.ui import render_gestion_usuarios
 from utils import mostrar_badge_version
-from db import run_query, run_transaction, registrar_auditoria
 
 st.set_page_config(page_title="Configuración", page_icon="⚙️", layout="wide")
 if not st.session_state.get('logged_in'): st.error("Acceso Denegado."); st.stop()
@@ -168,12 +169,14 @@ nombres = ["🔐 Gestión de Usuarios", "🗑️ Corrección de Registros", "⚙
 if rol == 'Super Administrador':
     nombres.insert(1, "💾 Administrar Backups")
     t1, t2, t3, t4 = st.tabs(nombres)
-    with t1: exec(open("modulos/1_Gestion_Usuarios.py").read(), globals())
+    with t1:
+        render_gestion_usuarios()
     with t2: exec(open("modulos/2_Administrar_Backups.py").read(), globals())
     with t3: modulo_correccion()
     with t4: exec(open("modulos/4_Catalogos.py").read(), globals())
 else:
     t1, t2, t3 = st.tabs(nombres)
-    with t1: exec(open("modulos/1_Gestion_Usuarios.py").read(), globals())
+    with t1:
+        render_gestion_usuarios()
     with t2: modulo_correccion()
     with t3: exec(open("modulos/4_Catalogos.py").read(), globals())

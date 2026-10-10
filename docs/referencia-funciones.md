@@ -15,6 +15,11 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `infra` | `src/certificado_operadores/infra/repository.py` | Repositorio de acceso a datos (SQLAlchemy) que devuelve modelos de dominio. |
 | `facade` | `src/certificado_operadores/facade.py` | Fachada de casos de uso; orquesta y delega en el repositorio sin ejecutar SQL. |
 | `admin_operadores` | `src/certificado_operadores/modulos/admin_operadores/ui.py` | Interfaz Streamlit de administración de operadores; consume el Facade y no contiene SQL. |
+| `domain.usuarios` | `src/certificado_operadores/domain/usuarios.py` | DTO de usuario, constantes y reglas puras de autorización. |
+| `infra.seguridad` | `src/certificado_operadores/infra/seguridad.py` | Hashing y verificación de contraseñas con `bcrypt`. |
+| `infra.usuarios_repository` | `src/certificado_operadores/infra/usuarios_repository.py` | Acceso a datos de `dim_usuarios` y auditoría (SQLAlchemy). |
+| `facade_usuarios` | `src/certificado_operadores/facade_usuarios.py` | Fachada de casos de uso de usuarios; orquesta y delega sin ejecutar SQL. |
+| `gestion_usuarios` | `src/certificado_operadores/modulos/gestion_usuarios/ui.py` | Interfaz Streamlit de gestión de usuarios; consume el Facade y no contiene SQL. |
 
 ## Funciones
 
@@ -101,6 +106,84 @@ Punto de entrada: `src/certificado_operadores/pages/2_Administracion_Operadores.
   de la búsqueda por cédula en el Facade (RF-01), autocompletado del formulario
   con el `OperadorInfo` (RF-02) y el caso de borde de operador no encontrado
   (estado "Creación"). Patrón AAA con un doble de Facade y un doble de Streamlit.
+
+### Módulo `domain.usuarios` — `src/certificado_operadores/domain/usuarios.py`
+
+Reglas puras de autorización y DTO de cuenta (spec 004).
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `roles_asignables` | `(rol_solicitante: str) -> tuple[str, ...]` | Roles que puede asignar un solicitante (solo Super Admin asigna Super Admin). | `tuple[str, ...]` |
+| `puede_modificar_usuario` | `(rol_solicitante: str, rol_objetivo: str) -> bool` | Indica si puede modificar una cuenta con ese rol. | `bool` |
+| `puede_inactivar_usuario` | `(usuario_solicitante: str, usuario_objetivo: str, estado_nuevo: str) -> bool` | Impide inactivar la propia cuenta. | `bool` |
+
+DTOs: `UsuarioInfo`, `ResultadoOperacion`. Constantes: `ROL_SUPER_ADMINISTRADOR`,
+`ROL_ADMINISTRADOR`, `ROL_GESTOR`, `ROLES_ASIGNABLES_BASE`, `ESTADO_ACTIVO`,
+`ESTADO_INACTIVO`, `ESTADOS_USUARIO` y los mensajes `MENSAJE_*`.
+
+### Módulo `infra.seguridad` — `src/certificado_operadores/infra/seguridad.py`
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `hashear_contrasena` | `(contrasena: str) -> str` | Genera el hash bcrypt de una contraseña. | `str` |
+| `verificar_contrasena` | `(contrasena: str, hash_almacenado: str) -> bool` | Comprueba una contraseña contra su hash. | `bool` |
+
+### Módulo `infra.usuarios_repository` — `src/certificado_operadores/infra/usuarios_repository.py`
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `UsuariosRepository.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa el repositorio inyectando el motor. | — |
+| `UsuariosRepository.motor` | `propiedad -> Engine` | Motor SQLAlchemy (inyectado o resuelto de `db.get_engine`). | `Engine` |
+| `UsuariosRepository.listar_usuarios` | `() -> list[UsuarioInfo]` | Lista las cuentas ordenadas por id. | `list[UsuarioInfo]` |
+| `UsuariosRepository.obtener_usuario` | `(usuario: str) -> UsuarioInfo \| None` | Consulta una cuenta por su nombre. | `UsuarioInfo` o `None` |
+| `UsuariosRepository.existe_usuario` | `(usuario: str) -> bool` | Indica si la cuenta ya existe. | `bool` |
+| `UsuariosRepository.crear_usuario` | `(usuario, password_hash, rol, estado) -> None` | Inserta una cuenta nueva. | — |
+| `UsuariosRepository.actualizar_usuario` | `(usuario, rol, estado, password_hash=None) -> None` | Actualiza rol, estado y contraseña opcional. | — |
+| `UsuariosRepository.registrar_auditoria` | `(usuario, accion, detalles) -> None` | Registra una acción en `log_auditoria`. | — |
+| `_mapear_usuario` | `(fila: RowMapping) -> UsuarioInfo` | Mapea una fila de `dim_usuarios` al DTO. | `UsuarioInfo` |
+
+### Módulo `facade_usuarios` — `src/certificado_operadores/facade_usuarios.py`
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `UsuariosFacade.__init__` | `(engine=None, hasheador=hashear_contrasena) -> None` | Inicializa la fachada con motor y hasheador inyectables. | — |
+| `UsuariosFacade.motor` | `propiedad -> Engine` | Motor SQLAlchemy delegado al repositorio. | `Engine` |
+| `UsuariosFacade.listar_usuarios` | `() -> list[UsuarioInfo]` | RF-01: lista las cuentas del sistema. | `list[UsuarioInfo]` |
+| `UsuariosFacade.obtener_usuario` | `(usuario: str) -> UsuarioInfo \| None` | Consulta una cuenta por su nombre. | `UsuarioInfo` o `None` |
+| `UsuariosFacade.crear_usuario` | `(usuario, contrasena, rol, *, usuario_solicitante="") -> ResultadoOperacion` | RF-02: valida existencia, hashea con bcrypt y crea. | `ResultadoOperacion` |
+| `UsuariosFacade.modificar_usuario` | `(usuario, rol, estado, contrasena=None, *, rol_solicitante="", usuario_solicitante="") -> ResultadoOperacion` | RF-03: aplica permisos y actualiza la cuenta. | `ResultadoOperacion` |
+
+### Módulo `gestion_usuarios` — `src/certificado_operadores/modulos/gestion_usuarios/ui.py`
+
+Interfaz de Streamlit de gestión de usuarios (spec 004). Página delgada: lista
+las cuentas y delega el alta y la modificación en `UsuariosFacade`. No contiene
+sentencias de base de datos (RNF-01).
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `filas_usuarios` | `(usuarios: list[UsuarioInfo]) -> list[dict[str, object]]` | Mapea los DTOs a filas legibles para `st.dataframe`. | `list[dict]` |
+| `nombres_usuarios` | `(usuarios: list[UsuarioInfo]) -> list[str]` | Extrae los nombres para el selector de edición. | `list[str]` |
+| `_render_encabezado` | `() -> None` | Título y ayuda del módulo. | — |
+| `_render_listado` | `(usuarios: list[UsuarioInfo]) -> None` | Muestra el listado de usuarios. | — |
+| `_render_alta` | `(fachada, roles_disponibles, usuario_solicitante) -> None` | Formulario de creación de usuarios. | — |
+| `_render_modificacion` | `(fachada, usuarios, roles_disponibles, rol_solicitante, usuario_solicitante) -> None` | Formulario de modificación de usuarios. | — |
+| `render_gestion_usuarios` | `(fachada: UsuariosFacade \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
+
+Constante: `AYUDA_CONTRASENA_OPCIONAL`. Punto de entrada:
+`src/certificado_operadores/pages/1_Configuracion.py` (importa
+`render_gestion_usuarios` y lo invoca en la pestaña de usuarios).
+
+### Módulo `gestion_usuarios` — pruebas
+
+- **Ubicación:** `tests/test_gestion_usuarios.py`
+- **Cobertura:** reglas puras (`roles_asignables`, `puede_modificar_usuario`,
+  `puede_inactivar_usuario`); fachada contra SQLite temporal (listado RF-01,
+  creación con hash bcrypt y auditoría RF-02, duplicado y campos vacíos,
+  modificación RF-03 con y sin contraseña, permiso de Super Admin,
+  autoinactivación e inexistente); ayuda de UI (`filas_usuarios`,
+  `nombres_usuarios`); y criterios de aceptación estáticos (paquete CA-01, sin
+  SQL en la UI CA-03/RNF-01, página con `render_gestion_usuarios` y sin `exec`
+  CA-02/RNF-02). Patrón AAA.
 
 ## Detalle
 

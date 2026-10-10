@@ -63,14 +63,20 @@
 certificado-operadores/
 ├── src/certificado_operadores/    # código del paquete (src-layout)
 │   ├── domain/                    # capa de dominio (DTOs, constantes y lógica pura)
-│   │   └── models.py
+│   │   ├── models.py
+│   │   └── usuarios.py            # DTO y reglas puras de usuarios
 │   ├── infra/                     # capa de infraestructura (acceso a datos)
-│   │   └── repository.py
+│   │   ├── repository.py
+│   │   ├── usuarios_repository.py # repositorio de usuarios (dim_usuarios)
+│   │   └── seguridad.py           # hashing de contraseñas (bcrypt)
 │   ├── modulos/                   # un módulo de UI por carpeta (p. ej. admin_operadores/)
-│   │   └── admin_operadores/
+│   │   ├── admin_operadores/
+│   │   │   └── ui.py              # interfaz de Streamlit; consume el Facade, sin SQL
+│   │   └── gestion_usuarios/
 │   │       └── ui.py              # interfaz de Streamlit; consume el Facade, sin SQL
 │   ├── pages/                     # puntos de entrada de Streamlit (páginas delgadas)
-│   └── facade.py                  # Fachada de casos de uso (UI → Facade → Dominio → Infraestructura)
+│   ├── facade.py                  # Fachada de operadores (UI → Facade → Dominio → Infraestructura)
+│   └── facade_usuarios.py         # Fachada de usuarios (UI → Facade → Dominio → Infraestructura)
 ├── tests/                   # pruebas (pytest)
 ├── docs/                    # documentación detallada (requerimientos, desacople, manual, funciones)
 ├── scripts/                 # código permanente y reutilizable
@@ -205,6 +211,7 @@ git push
 | 2026-10-09 | Crear `OperadoresFacade` en `src/certificado_operadores/facade.py` | Cumplir la regla Facade: la UI no accede directamente a la base de datos |
 | 2026-10-09 | Modularizar `facade.py` en `domain/models.py` e `infra/repository.py` | Separar responsabilidades (Clean Architecture): el Facade solo orquesta; el dominio define DTOs, constantes y lógica pura; la infraestructura encapsula el SQL |
 | 2026-10-09 | Mover la UI de administración de operadores a `modulos/admin_operadores/ui.py` consumiendo `OperadoresFacade` | Cumplir la spec 003: la UI no ejecuta SQL ni conoce el esquema; se elimina el heredado `modulos/5_Administracion_Operadores.py` |
+| 2026-10-09 | Extraer la UI de gestión de usuarios a `modulos/gestion_usuarios/ui.py` con `UsuariosFacade` y eliminar el `exec` de la pestaña en `pages/1_Configuracion.py` | Cumplir la spec 004: cero SQL en la UI (Facade) y hashing aislado en `infra/seguridad.py` (bcrypt) |
 
 ## 10. Notas y tareas pendientes
 

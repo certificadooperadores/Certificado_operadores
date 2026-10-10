@@ -46,15 +46,16 @@ UI / Streamlit  →  Facade (casos de uso)  →  Dominio  →  Infraestructura
 
 | Contrato | Define | Implementa |
 |----------|--------|------------|
-| DTOs y Modelos | `domain/models.py` | N/A (Dataclasses inmutables) |
-| Repositorio Base | `domain/` (Implícitamente) | `infra/repository.py` (SQLAlchemy) |
-| Casos de Uso | `facade.py` | `OperadoresFacade` |
+| DTOs y Modelos | `domain/models.py`, `domain/usuarios.py` | N/A (Dataclasses inmutables) |
+| Repositorio Base | `domain/` (Implícitamente) | `infra/repository.py`, `infra/usuarios_repository.py` (SQLAlchemy) |
+| Casos de Uso | `facade.py`, `facade_usuarios.py` | `OperadoresFacade`, `UsuariosFacade` |
 
 ## 5. Puntos de acoplamiento y su mitigación
 
 | Acoplamiento | Riesgo | Mitigación |
 |--------------|--------|------------|
 | UI -> Base de Datos | Consultas SQL rotas por cambios en UI | **Mitigado**: La UI (Streamlit) solo invoca métodos de `OperadoresFacade`. |
+| UI (usuarios) -> Base de Datos | Consultas SQL rotas por cambios en UI | **Mitigado**: `modulos/gestion_usuarios/ui.py` solo invoca `UsuariosFacade` (spec 004). |
 | Facade -> Infra | Facade atado a SQLAlchemy | **Mitigado**: Facade delega todo acceso a datos a `OperadoresRepository`. |
 | Tipado Dinámico | Errores de acceso a diccionarios en UI | **Mitigado**: Uso estricto de `dataclasses` (`OperadorInfo`) en la capa de Dominio. |
 
@@ -63,6 +64,7 @@ UI / Streamlit  →  Facade (casos de uso)  →  Dominio  →  Infraestructura
 1. **Clean Architecture Ligera:** Se separó la lógica en capas de Dominio (`domain/models.py`), Infraestructura (`infra/repository.py`) y Aplicación (`facade.py`).
 2. **Inyección de Dependencias:** El motor de base de datos se inyecta desde arriba (o perezosamente) para facilitar las pruebas unitarias con SQLite en memoria.
 3. **Patrón Facade:** Las vistas de Streamlit (`views/`) ignoran completamente la existencia de tablas, columnas o consultas SQL; todo pasa por `OperadoresFacade`.
+4. **Facade de usuarios (spec 004):** La gestión de usuarios se extrajo a `modulos/gestion_usuarios/ui.py` y consume `UsuariosFacade`; la página `pages/1_Configuracion.py` dejó de usar `exec` en esa pestaña. El hashing de contraseñas se aísla en `infra/seguridad.py` (bcrypt).
 
 ---
 
