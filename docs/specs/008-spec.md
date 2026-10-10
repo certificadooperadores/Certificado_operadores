@@ -10,32 +10,38 @@
 
 ## 1. Contexto y problema
 
-El archivo heredado `src/certificado_operadores/modulos/6_Gestion_Certificados.py` viola los principios de Clean Architecture al mezclar la interfaz visual de Streamlit con consultas directas a la base de datos. Esto produce acoplamiento fuerte y código difícil de mantener.
+El archivo heredado `src/certificado_operadores/modulos/6_Gestion_Certificados.py` gestiona el registro manual y por lote (Excel) de eventos e historial de certificaciones de operadores, mezclando la vista de Streamlit con más de 15 consultas SQL directas y transacciones a `fact_eventos_operador`, `dim_codigo` y `dim_persona`.
+Actualmente, la página `src/certificado_operadores/pages/2_Administracion_Operadores.py` lo invoca en la pestaña 2 usando el antipatrón `exec(Path("modulos/6_Gestion_Certificados.py").read_text(encoding="utf-8"), globals())`.
 
 ## 2. Objetivos
 
-- Mover el módulo a una estructura modular estricta: **una carpeta exclusiva para el módulo** (ej. `src/certificado_operadores/modulos/gestion_certificados/`), que contenga sus archivos con funciones únicas (ej. `ui.py` para las vistas de Streamlit, separadas del punto de entrada en `pages/`).
-- Eliminar por completo las sentencias SQL y las importaciones directas de la base de datos en la UI.
-- Aislar el acceso a datos en la capa Facade/Infraestructura que corresponda.
+- Extraer la vista a una estructura modular dedicada: `src/certificado_operadores/modulos/gestion_certificados/ui.py` con la función `render_gestion_certificados()`.
+- Encapsular las consultas y mutaciones de eventos/certificados en la capa de datos/repositorio (`certificados_repository.py` o repositorios existentes de infraestructura).
+- En `src/certificado_operadores/pages/2_Administracion_Operadores.py`, reemplazar la llamada `exec(...)` de la pestaña 2 por la importación limpia: `from modulos.gestion_certificados.ui import render_gestion_certificados`.
+- Proveer pruebas unitarias con `pytest` en `tests/test_gestion_certificados.py`.
 
 ## 3. No-objetivos
 
-- Cambiar la paleta de colores de Streamlit o agregar nuevas funcionalidades de negocio.
+- No refactorizar la pestaña 3 ("Reporte de Comportamientos"), la cual se abordará en la Spec 009.
 
 ## 4. Requisitos funcionales
 
-- **RF-01:** La funcionalidad visual actual del módulo gestion_certificados debe mantenerse intacta, delegando el manejo de datos a la capa inferior.
+- **RF-01 (Búsqueda):** Buscar operador por cédula o código de operación, validando que el operador esté activo.
+- **RF-02 (Registro Individual):** Registrar eventos de certificación, validando fechas, evaluadores y vehículos, registrando auditoría.
+- **RF-03 (Carga Masiva):** Procesar archivo Excel con validación de columnas, filas y códigos de operador antes de registrar eventos.
 
 ## 5. Requisitos no funcionales
 
-- **RNF-01 (Mantenibilidad):** El archivo de interfaz no debe contener la palabra `SELECT`, `UPDATE` o `INSERT`.
-- **RNF-02 (Desacople):** Si la base de datos cambia, la UI no debe verse afectada.
+- **RNF-01 (Mantenibilidad):** Cero sentencias SQL en `modulos/gestion_certificados/ui.py`.
+- **RNF-02 (Arquitectura):** Se elimina el `exec` de la pestaña 2 en `pages/2_Administracion_Operadores.py`.
+- **RNF-03 (Pruebas):** Pruebas unitarias en verde con `make test`.
 
 ## 6. Criterios de aceptación (verificables)
 
-- [ ] **CA-01:** El archivo refactorizado interactúa exclusivamente a través de la capa de aplicación (Facade).
-- [ ] **CA-02:** No existen consultas SQL en la vista visual.
-- [ ] **CA-03:** La aplicación Streamlit carga sin errores de sintaxis tras la refactorización.
+- [ ] **CA-01:** Existe el paquete `src/certificado_operadores/modulos/gestion_certificados/` con `__init__.py` y `ui.py`.
+- [ ] **CA-02:** `pages/2_Administracion_Operadores.py` invoca `render_gestion_certificados()` sin usar `exec` en la pestaña 2.
+- [ ] **CA-03:** Las consultas y mutaciones de base de datos se ejecutan a través de la capa de infraestructura / repositorio.
+- [ ] **CA-04:** `uv run pytest` pasa 100% en verde.
 
 ## 10. Enlaces
 
