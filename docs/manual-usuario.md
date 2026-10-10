@@ -87,8 +87,11 @@ Estructurado en tres pestañas operacionales para garantizar orden y agilidad:
 * Registro rápido de una novedad o infracción de bitácora seleccionando código de operador, fecha, vehículo, viaje, tarea, ruta y detalle del comportamiento.
 
 ### 5.2 Carga Masiva (Excel)
-* Descarga de plantilla institucional preformateada.
-* Subida de archivos con validación automática antes de guardar: detecta registros duplicados, valida la existencia de códigos de operador y muestra un resumen previo.
+* **Plantillas Oficiales:** Disponibles para descarga directa en la plataforma y ubicadas como respaldo en la carpeta `docs/plantillas/`:
+  * `Plantilla_Operadores_Maestra.xlsx` (Carga masiva de datos maestros de operadores)
+  * `Plantilla_Eventos_Operadores.xlsx` (Carga masiva de novedades de comportamiento y eventos)
+* **Descarga y Diligenciamiento:** Descargue la plantilla institucional desde el botón `📥 Descargar Plantilla` en la interfaz o tómela de `docs/plantillas/`.
+* **Subida con Validación Previa Automática:** El sistema valida la integridad de cada fila antes de la inserción: detecta registros duplicados, valida la existencia de códigos de operador y muestra un resumen previo diferenciando registros nuevos vs. actualizaciones.
 
 ### 5.3 Pestaña: Reincidencia de Comportamientos
 * **Evaluación Automatizada:** Botón `🔎 Evaluar Reincidencia` en la cabecera que procesa los impactos y frecuencias según reglas normativas de Metrocali.
@@ -215,7 +218,7 @@ uv run pre-commit install
 
 ## 10. Inicialización de la Base de Datos por Primera Vez (Script Único)
 
-A diferencia de las plantillas de `docs/plantillas/` (que se utilizan exclusivamente para la **Carga Masiva dentro de la interfaz web** cuando el sistema ya está operando), para **levantar la base de datos desde cero por primera vez** se procesan los libros Excel institucionales originales.
+Para **levantar la base de datos desde cero por primera vez**, se procesan los libros Excel institucionales originales.
 
 ### 10.1 Ubicación de los Archivos Excel Requeridos
 Los archivos fuentes deben estar depositados dentro de la carpeta `scripts/Archivos_excel_iniciales/` en la raíz del proyecto (las rutas son relativas al repositorio, sin rutas fijas absolutas):
@@ -232,9 +235,13 @@ Los archivos fuentes deben estar depositados dentro de la carpeta `scripts/Archi
      * `Consolidado Quejas Operadores.xlsx`
 
 ### 10.2 Ejecución con un Solo Comando
-Desde la raíz del proyecto (`Certificado_operadores`), ejecute un único comando que orquesta los tres pasos de extracción, transformación a modelo estrella y carga consolidada en SQLite:
+Abra la terminal en la raíz del proyecto (`Certificado_operadores`) y ejecute:
 
 ```powershell
+# Asegúrese de estar ubicado en la raíz del proyecto:
+cd "C:\ruta\hacia\Certificado_operadores"
+
+# Ejecutar el proceso unificado
 uv run python scripts/levantar_base_datos_primera_vez.py
 ```
 
@@ -243,10 +250,20 @@ uv run python scripts/levantar_base_datos_primera_vez.py
 2. **Paso 2:** Procesa los libros de accidentalidad, quejas, infracciones y bitácora generando la tabla `fact_comportamiento.csv` normalizada con más de 300.000 hechos.
 3. **Paso 3:** Crea la base de datos SQLite física (`operadores.db`), crea las tablas de configuración (`dim_usuarios`, logs de auditoría, control de reincidencias) y genera la cuenta inicial de administrador (`admin` / `admin123`).
 
-### 10.3 Iniciar la Aplicación Web
-Una vez finalizado el comando, inicie la plataforma con:
+---
+
+## 11. Ejecución e Inicio de la Aplicación
+
+Para iniciar la plataforma web dispone de dos alternativas:
+
+### Opción A — Ejecutable directo de Windows (Recomendada)
+Haga doble clic en el archivo [ejecutar_app.bat](file:///c:/Users/maortiz/OneDrive%20-%20metrocali.gov.co/App/Certificado_operadores/ejecutar_app.bat) ubicado en la raíz del repositorio. Este archivo se sitúa automáticamente en el directorio correcto y lanza Streamlit de forma directa.
+
+### Opción B — Desde Terminal PowerShell
+Abra PowerShell, ubíquese en la raíz del proyecto con `cd` y lance el comando:
 
 ```powershell
+cd "C:\ruta\hacia\Certificado_operadores"
 uv run streamlit run src/certificado_operadores/Inicio.py
 ```
 
