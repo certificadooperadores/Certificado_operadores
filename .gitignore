@@ -38,6 +38,9 @@ artifacts/
 # Código temporal del agente (nunca versionar)
 temp_agent/
 
+# Respaldos locales de la base de datos (nunca versionar)
+backups/
+
 # Sistema operativo / IDE
 .DS_Store
 Thumbs.db

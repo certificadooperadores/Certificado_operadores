@@ -68,10 +68,13 @@ certificado-operadores/
 │   ├── infra/                     # capa de infraestructura (acceso a datos)
 │   │   ├── repository.py
 │   │   ├── usuarios_repository.py # repositorio de usuarios (dim_usuarios)
+│   │   ├── backup_service.py      # copias de seguridad de SQLite (sistema de archivos)
 │   │   └── seguridad.py           # hashing de contraseñas (bcrypt)
 │   ├── modulos/                   # un módulo de UI por carpeta (p. ej. admin_operadores/)
 │   │   ├── admin_operadores/
 │   │   │   └── ui.py              # interfaz de Streamlit; consume el Facade, sin SQL
+│   │   ├── administrar_backups/
+│   │   │   └── ui.py              # interfaz de Streamlit; consume BackupService
 │   │   └── gestion_usuarios/
 │   │       └── ui.py              # interfaz de Streamlit; consume el Facade, sin SQL
 │   ├── pages/                     # puntos de entrada de Streamlit (páginas delgadas)
@@ -212,6 +215,7 @@ git push
 | 2026-10-09 | Modularizar `facade.py` en `domain/models.py` e `infra/repository.py` | Separar responsabilidades (Clean Architecture): el Facade solo orquesta; el dominio define DTOs, constantes y lógica pura; la infraestructura encapsula el SQL |
 | 2026-10-09 | Mover la UI de administración de operadores a `modulos/admin_operadores/ui.py` consumiendo `OperadoresFacade` | Cumplir la spec 003: la UI no ejecuta SQL ni conoce el esquema; se elimina el heredado `modulos/5_Administracion_Operadores.py` |
 | 2026-10-09 | Extraer la UI de gestión de usuarios a `modulos/gestion_usuarios/ui.py` con `UsuariosFacade` y eliminar el `exec` de la pestaña en `pages/1_Configuracion.py` | Cumplir la spec 004: cero SQL en la UI (Facade) y hashing aislado en `infra/seguridad.py` (bcrypt) |
+| 2026-10-09 | Extraer la UI de backups a `modulos/administrar_backups/ui.py` con `BackupService` (API de respaldo de SQLite, directorio configurable) y eliminar el `exec` de la pestaña en `pages/1_Configuracion.py` | Cumplir la spec 005: cero operaciones de SO/SQL en la UI y fin de la ruta dura `/Backups` y del `pg_dump` de PostgreSQL |
 
 ## 10. Notas y tareas pendientes
 

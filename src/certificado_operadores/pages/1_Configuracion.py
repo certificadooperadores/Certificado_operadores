@@ -1,5 +1,6 @@
 import streamlit as st
 from db import registrar_auditoria, run_query, run_transaction
+from modulos.administrar_backups.ui import render_administrar_backups
 from modulos.gestion_usuarios.ui import render_gestion_usuarios
 from utils import mostrar_badge_version
 
@@ -171,7 +172,8 @@ if rol == 'Super Administrador':
     t1, t2, t3, t4 = st.tabs(nombres)
     with t1:
         render_gestion_usuarios()
-    with t2: exec(open("modulos/2_Administrar_Backups.py").read(), globals())
+    with t2:
+        render_administrar_backups()
     with t3: modulo_correccion()
     with t4: exec(open("modulos/4_Catalogos.py").read(), globals())
 else:

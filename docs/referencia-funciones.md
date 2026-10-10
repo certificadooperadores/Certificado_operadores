@@ -20,6 +20,8 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `infra.usuarios_repository` | `src/certificado_operadores/infra/usuarios_repository.py` | Acceso a datos de `dim_usuarios` y auditoría (SQLAlchemy). |
 | `facade_usuarios` | `src/certificado_operadores/facade_usuarios.py` | Fachada de casos de uso de usuarios; orquesta y delega sin ejecutar SQL. |
 | `gestion_usuarios` | `src/certificado_operadores/modulos/gestion_usuarios/ui.py` | Interfaz Streamlit de gestión de usuarios; consume el Facade y no contiene SQL. |
+| `infra.backup_service` | `src/certificado_operadores/infra/backup_service.py` | Servicio de copias de seguridad de SQLite; encapsula el sistema de archivos. |
+| `administrar_backups` | `src/certificado_operadores/modulos/administrar_backups/ui.py` | Interfaz Streamlit de backups; consume `BackupService` y no contiene SO ni SQL. |
 
 ## Funciones
 
@@ -184,6 +186,68 @@ Constante: `AYUDA_CONTRASENA_OPCIONAL`. Punto de entrada:
   `nombres_usuarios`); y criterios de aceptación estáticos (paquete CA-01, sin
   SQL en la UI CA-03/RNF-01, página con `render_gestion_usuarios` y sin `exec`
   CA-02/RNF-02). Patrón AAA.
+
+### Módulo `infra.backup_service` — `src/certificado_operadores/infra/backup_service.py`
+
+Servicio de copias de seguridad de la base SQLite (spec 005). Encapsula la
+gestión física de los respaldos con ruta de directorio y base de origen
+**configurables** (variables de entorno `BACKUPS_DIR` y `BACKUP_DB_PATH`) y
+valores por defecto relativos; no contiene rutas absolutas quemadas.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `_copiar_con_sqlite` | `(origen: Path, destino: Path) -> None` | Copia consistente con la API de respaldo de `sqlite3`. | — |
+| `BackupInfo.tamano_mb` | `propiedad -> float` | Tamaño del respaldo en megabytes. | `float` |
+| `BackupService.__init__` | `(directorio=None, origen_db=None, reloj=datetime.now) -> None` | Inicializa el servicio con dependencias inyectables. | — |
+| `BackupService.directorio` | `propiedad -> Path` | Directorio de respaldos (inyectado, por entorno o por defecto). | `Path` |
+| `BackupService.origen_db` | `propiedad -> Path` | Ruta de la base de origen (inyectada o configurada). | `Path` |
+| `BackupService.listar_backups` | `() -> list[BackupInfo]` | RF-01: lista los respaldos del más reciente al más antiguo. | `list[BackupInfo]` |
+| `BackupService.crear_backup` | `() -> BackupInfo` | RF-02: crea una copia versionada de la base actual. | `BackupInfo` |
+| `BackupService.proteger` | `(nombre: str) -> BackupInfo` | RF-03: marca el respaldo como no eliminable. | `BackupInfo` |
+| `BackupService.desproteger` | `(nombre: str) -> BackupInfo` | RF-03: quita la protección del respaldo. | `BackupInfo` |
+| `BackupService.eliminar` | `(nombre: str) -> None` | RF-04: elimina un respaldo desprotegido. | — |
+| `BackupService._ruta` | `(nombre: str) -> Path` | Resuelve la ruta de un respaldo existente. | `Path` |
+| `BackupService._describir` | `(archivo: Path) -> BackupInfo` | Construye los metadatos de un archivo. | `BackupInfo` |
+| `BackupService._copiar` | `(origen: Path, destino: Path) -> None` | Copia con SQLite y degrada a copia de archivo. | — |
+| `BackupService._siguiente_nombre` | `() -> str` | Nombre versionado `DD-MM-AAAA_Vn.db`. | `str` |
+| `BackupService._version_de` | `(nombre: str) -> int \| None` | Extrae el número de versión del nombre. | `int` o `None` |
+| `BackupService._nombre_protegido` | `(nombre: str) -> str` | Nombre con el sufijo `.protegido`. | `str` |
+| `BackupService._nombre_desprotegido` | `(nombre: str) -> str` | Nombre sin el sufijo `.protegido`. | `str` |
+
+DTO: `BackupInfo`. Excepciones: `BackupError`, `BackupProtegidoError`.
+Constantes: `DIRECTORIO_POR_DEFECTO`, `VARIABLE_ENTORNO_DIRECTORIO`,
+`VARIABLE_ENTORNO_ORIGEN`, `EXTENSION_BACKUP`, `SUFIJO_PROTEGIDO`,
+`FORMATO_FECHA`, `SEPARADOR_VERSION`.
+
+### Módulo `administrar_backups` — `src/certificado_operadores/modulos/administrar_backups/ui.py`
+
+Interfaz de Streamlit de administración de backups (spec 005). Página delgada:
+lista los respaldos y delega crear, proteger, desproteger y eliminar en
+`BackupService`. No contiene operaciones de sistema de archivos ni sentencias
+SQL (RNF-01).
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `filas_backups` | `(backups: list[BackupInfo]) -> list[dict[str, object]]` | Mapea los respaldos a filas legibles para `st.dataframe`. | `list[dict]` |
+| `_render_encabezado` | `() -> None` | Título y ayuda del módulo. | — |
+| `_render_creacion` | `(fachada: BackupService) -> None` | Formulario de creación de respaldos. | — |
+| `_render_proteccion` | `(fachada, respaldos) -> None` | Proteger / desproteger un respaldo. | — |
+| `_render_eliminacion` | `(fachada, respaldos) -> None` | Eliminar un respaldo desprotegido. | — |
+| `render_administrar_backups` | `(fachada: BackupService \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
+
+Constantes: `FORMATO_FECHA_HORA`, `ETIQUETA_PROTEGIDO`, `ETIQUETA_DESPROTEGIDO`.
+Punto de entrada: `src/certificado_operadores/pages/1_Configuracion.py` (importa
+`render_administrar_backups` y lo invoca en la pestaña de backups).
+
+### Módulo `administrar_backups` — pruebas
+
+- **Ubicación:** `tests/test_backups.py`
+- **Cobertura:** servicio contra directorio y base SQLite temporales (creación
+  versionada RF-02 y copia consistente, listado RF-01, protección/
+  desprotección RF-03, eliminación y bloqueo de protegidos RF-04, resolución
+  por variable de entorno); funciones puras de la UI (`filas_backups`); y
+  criterios estáticos (paquete CA-01, UI sin SO ni SQL CA-03/RNF-01, página con
+  `render_administrar_backups` y sin `exec` CA-02/RNF-02). Patrón AAA.
 
 ## Detalle
 
