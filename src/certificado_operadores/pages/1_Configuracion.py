@@ -1,5 +1,6 @@
 import streamlit as st
 from modulos.administrar_backups.ui import render_administrar_backups
+from modulos.catalogos.ui import render_catalogos
 from modulos.correccion_registros.ui import render_correccion_registros
 from modulos.gestion_usuarios.ui import render_gestion_usuarios
 from utils import mostrar_badge_version
@@ -32,7 +33,7 @@ if rol == "Super Administrador":
     with t3:
         render_correccion_registros()
     with t4:
-        exec(open("modulos/4_Catalogos.py").read(), globals())  # noqa: SIM115
+        render_catalogos()
 else:
     t1, t2, t3 = st.tabs(nombres)
     with t1:
@@ -40,4 +41,4 @@ else:
     with t2:
         render_correccion_registros()
     with t3:
-        exec(open("modulos/4_Catalogos.py").read(), globals())  # noqa: SIM115
+        render_catalogos()

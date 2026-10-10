@@ -24,6 +24,8 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `administrar_backups` | `src/certificado_operadores/modulos/administrar_backups/ui.py` | Interfaz Streamlit de backups; consume `BackupService` y no contiene SO ni SQL. |
 | `infra.eventos_repository` | `src/certificado_operadores/infra/eventos_repository.py` | Acceso a datos de `fact_eventos_operador`: filtros, lotes y mutaciones con auditoría (SQLAlchemy). |
 | `correccion_registros` | `src/certificado_operadores/modulos/correccion_registros/ui.py` | Interfaz Streamlit de corrección de registros; consume `EventosRepository` y no contiene SQL. |
+| `infra.catalogos_repository` | `src/certificado_operadores/infra/catalogos_repository.py` | Acceso a datos de los cinco catálogos (empresas, vehículos, impactos, comportamientos y detalles) con auditoría (SQLAlchemy). |
+| `catalogos` | `src/certificado_operadores/modulos/catalogos/ui.py` | Interfaz Streamlit de catálogos; consume `CatalogosRepository` y no contiene SQL. |
 
 ## Funciones
 
@@ -323,6 +325,85 @@ redirección a esta interfaz.
   estáticos (paquete CA-01, UI sin SQL CA-02/RNF-01, página sin funciones
   inlined con `render_correccion_registros` CA-02, módulo heredado deprecado sin
   SQL). Patrón AAA.
+
+### Módulo `infra.catalogos_repository` — `src/certificado_operadores/infra/catalogos_repository.py`
+
+Repositorio de la capa de infraestructura que encapsula **todo** el acceso a
+datos de los cinco catálogos (`dim_empresa`, `dim_vehiculo`, `dim_impacto`,
+`dim_comportamiento` y `dim_detalle_comportamiento`). Devuelve DTOs inmutables y
+registra la auditoría de impacto, comportamiento y detalle dentro de la misma
+transacción; empresa y vehículo preservan el comportamiento heredado (sin
+auditoría).
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `construir_descripcion_comportamiento` | `(tipo, servicios, jerarquia_1, jerarquia_2=None, jerarquia_3=None, jerarquia_4=None) -> str` | Compone la descripción `tipo::servicios::jerarquías` en minúsculas. | `str` |
+| `CatalogosRepository.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa el repositorio inyectando el motor. | — |
+| `CatalogosRepository.motor` | `propiedad -> Engine` | Motor SQLAlchemy (inyectado o resuelto de `db.get_engine`). | `Engine` |
+| `CatalogosRepository.listar_empresas` | `() -> list[EmpresaInfo]` | RF-01: lista las empresas ordenadas. | `list[EmpresaInfo]` |
+| `CatalogosRepository.crear_empresa` | `(nombre: str, usuario: str) -> int` | RF-01: crea una empresa activa con el siguiente id. | `int` |
+| `CatalogosRepository.cambiar_vigencia_empresa` | `(id_empresa: int, vigencia: int) -> None` | RF-01: activa o inactiva una empresa. | — |
+| `CatalogosRepository.renombrar_empresa` | `(id_empresa: int, nombre: str) -> None` | RF-01: renombra una empresa. | — |
+| `CatalogosRepository.listar_vehiculos` | `() -> list[VehiculoInfo]` | RF-02: lista los vehículos ordenados. | `list[VehiculoInfo]` |
+| `CatalogosRepository.crear_vehiculo` | `(nombre: str, usuario: str) -> int` | RF-02: crea un vehículo con el siguiente id. | `int` |
+| `CatalogosRepository.renombrar_vehiculo` | `(id_vehiculo: int, nombre: str) -> None` | RF-02: renombra un vehículo. | — |
+| `CatalogosRepository.listar_impactos` | `() -> list[ImpactoInfo]` | RF-03: lista los niveles de impacto. | `list[ImpactoInfo]` |
+| `CatalogosRepository.crear_impacto` | `(nombre, maximo, dias_maximo, usuario) -> int` | RF-03: crea un impacto y audita. | `int` |
+| `CatalogosRepository.actualizar_impacto` | `(id_impacto, nombre, maximo, dias_maximo, usuario) -> None` | RF-03: actualiza un impacto y audita. | — |
+| `CatalogosRepository.listar_comportamientos` | `() -> list[ComportamientoInfo]` | RF-04: lista los comportamientos con su impacto. | `list[ComportamientoInfo]` |
+| `CatalogosRepository.crear_comportamiento` | `(descripcion, id_impacto, usuario) -> int` | RF-04: crea un comportamiento y audita. | `int` |
+| `CatalogosRepository.actualizar_comportamiento` | `(id_comportamiento, descripcion, id_impacto, usuario) -> None` | RF-04: actualiza un comportamiento y audita. | — |
+| `CatalogosRepository.listar_detalles` | `(fuente: str \| None = None, limite: int = 500) -> list[DetalleComportamientoInfo]` | RF-05: lista los detalles, opcionalmente por fuente. | `list[DetalleComportamientoInfo]` |
+| `CatalogosRepository.crear_detalle` | `(datos: DatosDetalleComportamiento, usuario: str) -> int` | RF-05: crea un detalle y audita. | `int` |
+| `CatalogosRepository.actualizar_detalle` | `(id_jerarquia: int, datos, usuario: str) -> None` | RF-05: actualiza un detalle y audita. | — |
+| `CatalogosRepository._siguiente_id` | `(tabla: str, columna: str) -> int` | Calcula `MAX(columna)+1` (tabla/columna internas). | `int` |
+| `CatalogosRepository._parametros_detalle` | `(datos: DatosDetalleComportamiento) -> dict[str, object]` | Traduce el detalle a parámetros enlazados. | `dict` |
+| `CatalogosRepository._auditar` | `(conexion, usuario, accion, detalles) -> None` | Inserta la auditoría en la transacción. | — |
+
+DTOs: `EmpresaInfo` (con propiedad `estado`), `VehiculoInfo`, `ImpactoInfo`,
+`ComportamientoInfo`, `DetalleComportamientoInfo` (salida) y
+`DatosDetalleComportamiento` (entrada). Constantes: `LIMITE_DETALLES`,
+`SEPARADOR_DESCRIPCION`, `ESTADO_EMPRESA_ACTIVA`, `ESTADO_EMPRESA_INACTIVA` y las
+acciones `ACCION_CREAR_IMPACTO`, `ACCION_EDITAR_IMPACTO`,
+`ACCION_CREAR_COMPORTAMIENTO`, `ACCION_EDITAR_COMPORTAMIENTO`,
+`ACCION_CREAR_DETALLE`, `ACCION_EDITAR_DETALLE`.
+
+### Módulo `catalogos` — `src/certificado_operadores/modulos/catalogos/ui.py`
+
+Interfaz Streamlit de los cinco catálogos. Delega toda lectura y mutación en
+`CatalogosRepository`; no contiene sentencias SQL (RNF-01) ni conoce el esquema.
+El paquete expone `render_catalogos` en
+`src/certificado_operadores/modulos/catalogos/__init__.py`.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `vigencia_desde_accion` | `(accion: str) -> int` | Traduce "Activar"/"Inactivar" a la vigencia. | `int` |
+| `filas_empresas` | `(empresas: list[EmpresaInfo]) -> list[dict[str, object]]` | Mapea empresas a filas legibles. | `list[dict]` |
+| `filas_vehiculos` | `(vehiculos: list[VehiculoInfo]) -> list[dict[str, object]]` | Mapea vehículos a filas legibles. | `list[dict]` |
+| `filas_impactos` | `(impactos: list[ImpactoInfo]) -> list[dict[str, object]]` | Mapea impactos a filas legibles. | `list[dict]` |
+| `filas_comportamientos` | `(comportamientos: list[ComportamientoInfo]) -> list[dict[str, object]]` | Mapea comportamientos a filas legibles. | `list[dict]` |
+| `filas_detalles` | `(detalles: list[DetalleComportamientoInfo]) -> list[dict[str, object]]` | Mapea detalles a filas legibles. | `list[dict]` |
+| `opciones_impacto` | `(impactos: list[ImpactoInfo]) -> dict[int, str]` | Mapa `{id_impacto: impacto}`. | `dict` |
+| `id_impacto_desde_nombre` | `(opciones: dict[int, str], nombre: str) -> int \| None` | Recupera el id de un impacto por su nombre. | `int` o `None` |
+| `opciones_comportamiento` | `(comportamientos: list[ComportamientoInfo]) -> dict[str, str]` | Mapa `{str(id): comportamiento}`. | `dict` |
+| `render_catalogos` | `(repositorio: CatalogosRepository \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
+
+Constantes: `USUARIO_POR_DEFECTO`, `ETIQUETA_TODAS_FUENTES`, `FUENTES_DETALLE`,
+`ACCION_ACTIVAR`, `ACCION_INACTIVAR`, `ACCIONES_ESTADO`, `TITULO`. Punto de
+entrada: `src/certificado_operadores/pages/1_Configuracion.py` (importa
+`render_catalogos` y lo invoca en la pestaña de catálogos; ya **no** usa `exec`).
+
+### Módulo `catalogos` — pruebas
+
+- **Ubicación:** `tests/test_catalogos.py`
+- **Cobertura:** repositorio contra SQLite temporal (listar/crear/activar/renombrar
+  empresas; listar/crear/renombrar vehículos; listar/crear/actualizar impactos;
+  listar/crear/actualizar comportamientos; listar por fuente/crear/actualizar
+  detalles; auditoría y descripción compuesta); funciones puras de la UI
+  (`vigencia_desde_accion`, `filas_*`, `opciones_impacto`,
+  `id_impacto_desde_nombre`, `opciones_comportamiento`); y criterios estáticos
+  (paquete CA-01, UI sin SQL RNF-01, repositorio que encapsula la SQL CA-03,
+  página sin `exec` con `render_catalogos` CA-02/RNF-02). Patrón AAA.
 
 ## Detalle
 

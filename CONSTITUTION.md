@@ -69,6 +69,7 @@ certificado-operadores/
 │   │   ├── repository.py
 │   │   ├── usuarios_repository.py # repositorio de usuarios (dim_usuarios)
 │   │   ├── eventos_repository.py  # repositorio de eventos (fact_eventos_operador)
+│   │   ├── catalogos_repository.py # repositorio de los cinco catálogos (dim_*)
 │   │   ├── backup_service.py      # copias de seguridad de SQLite (sistema de archivos)
 │   │   └── seguridad.py           # hashing de contraseñas (bcrypt)
 │   ├── modulos/                   # un módulo de UI por carpeta (p. ej. admin_operadores/)
@@ -76,6 +77,8 @@ certificado-operadores/
 │   │   │   └── ui.py              # interfaz de Streamlit; consume el Facade, sin SQL
 │   │   ├── administrar_backups/
 │   │   │   └── ui.py              # interfaz de Streamlit; consume BackupService
+│   │   ├── catalogos/
+│   │   │   └── ui.py              # interfaz de Streamlit; consume CatalogosRepository, sin SQL
 │   │   ├── correccion_registros/
 │   │   │   └── ui.py              # interfaz de Streamlit; consume EventosRepository, sin SQL
 │   │   └── gestion_usuarios/
@@ -220,6 +223,7 @@ git push
 | 2026-10-09 | Extraer la UI de gestión de usuarios a `modulos/gestion_usuarios/ui.py` con `UsuariosFacade` y eliminar el `exec` de la pestaña en `pages/1_Configuracion.py` | Cumplir la spec 004: cero SQL en la UI (Facade) y hashing aislado en `infra/seguridad.py` (bcrypt) |
 | 2026-10-09 | Extraer la UI de backups a `modulos/administrar_backups/ui.py` con `BackupService` (API de respaldo de SQLite, directorio configurable) y eliminar el `exec` de la pestaña en `pages/1_Configuracion.py` | Cumplir la spec 005: cero operaciones de SO/SQL en la UI y fin de la ruta dura `/Backups` y del `pg_dump` de PostgreSQL |
 | 2026-10-09 | Extraer la corrección de registros a `modulos/correccion_registros/ui.py` con `EventosRepository` (filtros, lotes y mutaciones con auditoría) y deprecar `modulos/3_Modificacion_Tablas.py` | Cumplir la spec 006: cero SQL en la página y en la vista; todo el acceso a `fact_eventos_operador` pasa por el repositorio |
+| 2026-10-09 | Extraer los catálogos a `modulos/catalogos/ui.py` con `CatalogosRepository` y eliminar el último `exec` de `pages/1_Configuracion.py` | Cumplir la spec 007: la UI no ejecuta SQL (Facade/Repositorio) y la página de configuración queda 100% desacoplada |
 
 ## 10. Notas y tareas pendientes
 
