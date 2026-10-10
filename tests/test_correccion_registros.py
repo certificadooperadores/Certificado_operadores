@@ -1,10 +1,11 @@
-"""Pruebas de la corrección de registros (specs 015, 017 y 018).
+"""Pruebas de la corrección de registros (specs 015, 017, 018 y 019).
 
 Cubren cinco frentes: el repositorio ``EventosRepository`` contra una base
 SQLite temporal (búsqueda con filtros y mutaciones de la spec 006, el listado y
 las mutaciones genéricas por tabla de la spec 015, las validaciones de
-integridad referencial y edición segura de la spec 017, y los catálogos
-oficiales y la tabla de códigos de la spec 018), las funciones puras de la UI
+integridad referencial y edición segura de la spec 017, los catálogos
+oficiales y la tabla de códigos de la spec 018, y las columnas completas de
+negocio de la tabla de eventos de la spec 019), las funciones puras de la UI
 tipo Excel (incluidas la búsqueda rápida y las acciones en bloque de la spec
 018), el catálogo de tablas soportadas y las verificaciones estáticas de los
 criterios de aceptación: el paquete existe, la UI usa ``st.data_editor`` con
@@ -46,6 +47,11 @@ from certificado_operadores.infra.eventos_repository import (
     OPCIONES_LICENCIA,
     TABLA_PERSONA,
     TABLAS_CORRECCION,
+    TIPO_EDICION_CODIGO,
+    TIPO_EDICION_ENTERO,
+    TIPO_EDICION_EVENTO,
+    TIPO_EDICION_FECHA,
+    TIPO_EDICION_TEXTO,
     CambioRegistro,
     CodigoInexistenteError,
     ColumnaProtegidaError,
@@ -118,8 +124,17 @@ _ESQUEMA = (
         id_hecho_evento INTEGER PRIMARY KEY,
         id_codigo INTEGER NOT NULL,
         id_tipo_evento INTEGER NOT NULL,
-        fecha_registro TEXT NOT NULL,
-        id_vigencia INTEGER NOT NULL
+        id_vehiculo_evaluado INTEGER,
+        evaluador TEXT,
+        fecha_prueba TEXT,
+        fecha_certificado TEXT,
+        fecha_retiro TEXT,
+        fecha_notificacion_retiro TEXT,
+        fecha_suspension TEXT,
+        fecha_observacion TEXT,
+        observacion TEXT,
+        id_vigencia INTEGER NOT NULL,
+        fecha_registro TEXT NOT NULL
     );
     """,
     """
@@ -157,11 +172,73 @@ _ESQUEMA = (
 _TIPOS = ((1, "Certificación"), (2, "Reactivación"), (7, "Cancelación"))
 
 _EVENTOS = (
-    # (id, id_codigo, id_tipo_evento, fecha_registro, id_vigencia)
-    (1, 5001, 1, "2026-01-10 08:15:00", VIGENCIA_ACTIVA),
-    (2, 5001, 2, "2026-01-10 08:15:30", VIGENCIA_ANULADA),
-    (3, 5002, 1, "2026-01-10 09:40:00", VIGENCIA_ACTIVA),
-    (4, 5002, 7, "2026-02-05 09:40:10", VIGENCIA_ACTIVA),
+    # id_hecho_evento, id_codigo, id_tipo_evento, fecha_registro, id_vigencia,
+    # id_vehiculo_evaluado, evaluador, fecha_prueba, fecha_certificado, fecha_retiro,
+    # fecha_notificacion_retiro, fecha_suspension, fecha_observacion, observacion
+    {
+        "id_hecho_evento": 1,
+        "id_codigo": 5001,
+        "id_tipo_evento": 1,
+        "id_vehiculo_evaluado": 1,
+        "evaluador": "Juan Pérez",
+        "fecha_prueba": "2026-01-08",
+        "fecha_certificado": "2026-01-10",
+        "fecha_retiro": None,
+        "fecha_notificacion_retiro": None,
+        "fecha_suspension": None,
+        "fecha_observacion": None,
+        "observacion": "Certificado inicial",
+        "id_vigencia": VIGENCIA_ACTIVA,
+        "fecha_registro": "2026-01-10 08:15:00",
+    },
+    {
+        "id_hecho_evento": 2,
+        "id_codigo": 5001,
+        "id_tipo_evento": 2,
+        "id_vehiculo_evaluado": None,
+        "evaluador": None,
+        "fecha_prueba": None,
+        "fecha_certificado": None,
+        "fecha_retiro": None,
+        "fecha_notificacion_retiro": None,
+        "fecha_suspension": None,
+        "fecha_observacion": None,
+        "observacion": None,
+        "id_vigencia": VIGENCIA_ANULADA,
+        "fecha_registro": "2026-01-10 08:15:30",
+    },
+    {
+        "id_hecho_evento": 3,
+        "id_codigo": 5002,
+        "id_tipo_evento": 1,
+        "id_vehiculo_evaluado": 2,
+        "evaluador": "María López",
+        "fecha_prueba": None,
+        "fecha_certificado": None,
+        "fecha_retiro": None,
+        "fecha_notificacion_retiro": None,
+        "fecha_suspension": None,
+        "fecha_observacion": None,
+        "observacion": None,
+        "id_vigencia": VIGENCIA_ACTIVA,
+        "fecha_registro": "2026-01-10 09:40:00",
+    },
+    {
+        "id_hecho_evento": 4,
+        "id_codigo": 5002,
+        "id_tipo_evento": 7,
+        "id_vehiculo_evaluado": None,
+        "evaluador": None,
+        "fecha_prueba": None,
+        "fecha_certificado": None,
+        "fecha_retiro": "2026-02-05",
+        "fecha_notificacion_retiro": "2026-02-04",
+        "fecha_suspension": None,
+        "fecha_observacion": None,
+        "observacion": "Retiro voluntario",
+        "id_vigencia": VIGENCIA_ACTIVA,
+        "fecha_registro": "2026-02-05 09:40:10",
+    },
 )
 
 _LICENCIAS = (
@@ -291,19 +368,16 @@ def _sembrar_datos(motor: Engine) -> None:
         conexion.execute(
             text(
                 "INSERT INTO fact_eventos_operador "
-                "(id_hecho_evento, id_codigo, id_tipo_evento, fecha_registro, id_vigencia) "
-                "VALUES (:id, :codigo, :tipo, :fecha, :vigencia)"
+                "(id_hecho_evento, id_codigo, id_tipo_evento, id_vehiculo_evaluado, "
+                "evaluador, fecha_prueba, fecha_certificado, fecha_retiro, "
+                "fecha_notificacion_retiro, fecha_suspension, fecha_observacion, "
+                "observacion, id_vigencia, fecha_registro) "
+                "VALUES (:id_hecho_evento, :id_codigo, :id_tipo_evento, "
+                ":id_vehiculo_evaluado, :evaluador, :fecha_prueba, :fecha_certificado, "
+                ":fecha_retiro, :fecha_notificacion_retiro, :fecha_suspension, "
+                ":fecha_observacion, :observacion, :id_vigencia, :fecha_registro)"
             ),
-            [
-                {
-                    "id": identificador,
-                    "codigo": codigo,
-                    "tipo": tipo,
-                    "fecha": fecha,
-                    "vigencia": vigencia,
-                }
-                for identificador, codigo, tipo, fecha, vigencia in _EVENTOS
-            ],
+            _EVENTOS,
         )
         conexion.execute(
             text(
@@ -585,6 +659,73 @@ def test_listar_registros_eventos_mapea_filas(repositorio: EventosRepository) ->
     assert registros[0].datos["Evento"] == "Cancelación"
     assert registros[0].estado == "Vigente"
     assert registros[2].estado == "Anulado"
+
+
+# --- Spec 019: columnas completas de negocio en eventos ---------------------
+def test_definicion_eventos_expone_todas_las_columnas_de_negocio() -> None:
+    """CA-01: la definición de eventos incluye fechas, evaluador, vehículo y observación."""
+    # Arrange
+    definicion = _definicion("eventos")
+
+    # Act
+    etiquetas = [columna.etiqueta for columna in definicion.columnas]
+
+    # Assert
+    assert etiquetas == [
+        "Código",
+        "Cédula",
+        "Nombre",
+        "Evento",
+        "Fecha Certificado",
+        "Fecha Retiro",
+        "Fecha Notif. Retiro",
+        "Fecha Suspensión",
+        "Fecha Prueba",
+        "Evaluador",
+        "Vehículo Evaluado",
+        "Observación",
+        "Registro",
+    ]
+
+
+def test_definicion_eventos_marca_columnas_editables_con_su_tipo() -> None:
+    """CA-01/CA-02: cada columna de negocio editable declara su tipo de edición."""
+    # Arrange
+    definicion = _definicion("eventos")
+
+    # Act
+    tipos = {columna.etiqueta: columna.tipo for columna in definicion.editables}
+
+    # Assert
+    assert tipos["Fecha Certificado"] == TIPO_EDICION_FECHA
+    assert tipos["Fecha Retiro"] == TIPO_EDICION_FECHA
+    assert tipos["Fecha Notif. Retiro"] == TIPO_EDICION_FECHA
+    assert tipos["Fecha Suspensión"] == TIPO_EDICION_FECHA
+    assert tipos["Fecha Prueba"] == TIPO_EDICION_FECHA
+    assert tipos["Evaluador"] == TIPO_EDICION_TEXTO
+    assert tipos["Vehículo Evaluado"] == TIPO_EDICION_ENTERO
+    assert tipos["Observación"] == TIPO_EDICION_TEXTO
+    assert tipos["Código"] == TIPO_EDICION_CODIGO
+    assert tipos["Evento"] == TIPO_EDICION_EVENTO
+
+
+def test_listar_registros_eventos_expone_las_columnas_de_negocio(
+    repositorio: EventosRepository,
+) -> None:
+    """CA-01: el listado trae los valores de fechas, evaluador, vehículo y observación."""
+    # Act
+    registros = repositorio.listar_registros("eventos")
+
+    # Assert: evento 4 (índice 0) trae retiro y observación
+    assert registros[0].datos["Fecha Retiro"] == "2026-02-05"
+    assert registros[0].datos["Fecha Notif. Retiro"] == "2026-02-04"
+    assert registros[0].datos["Observación"] == "Retiro voluntario"
+    # Evento 1 (índice 3) trae certificado, prueba, evaluador y vehículo
+    assert registros[3].datos["Fecha Certificado"] == "2026-01-10"
+    assert registros[3].datos["Fecha Prueba"] == "2026-01-08"
+    assert registros[3].datos["Evaluador"] == "Juan Pérez"
+    assert registros[3].datos["Vehículo Evaluado"] == 1
+    assert registros[3].datos["Registro"] == "2026-01-10 08:15:00"
 
 
 def test_listar_registros_licencias(repositorio: EventosRepository) -> None:
@@ -920,6 +1061,106 @@ def test_actualizar_registros_seguros_genero_invalido_lanza(
         repositorio.actualizar_registros_seguros("operadores", [cambio], "admin")
 
 
+# --- Spec 019: persistencia de las columnas de negocio de eventos -----------
+def test_actualizar_registros_seguros_cambia_fecha_certificado(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-02: la fecha de certificado se edita y persiste en la tabla de eventos."""
+    # Arrange
+    cambio = CambioRegistro(1, "Fecha Certificado", "2026-03-01")
+
+    # Act
+    afectados = repositorio.actualizar_registros_seguros("eventos", [cambio], "admin")
+
+    # Assert
+    assert afectados == 1
+    with motor_sqlite.connect() as conexion:
+        fecha = conexion.execute(
+            text("SELECT fecha_certificado FROM fact_eventos_operador WHERE id_hecho_evento = 1")
+        ).scalar_one()
+    assert str(fecha) == "2026-03-01"
+
+
+def test_actualizar_registros_seguros_cambia_fecha_retiro_y_notificacion(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-02: las fechas de retiro y notificación de retiro se editan y persisten."""
+    # Arrange
+    cambios = [
+        CambioRegistro(4, "Fecha Retiro", "2026-04-01"),
+        CambioRegistro(4, "Fecha Notif. Retiro", "2026-03-30"),
+    ]
+
+    # Act
+    afectados = repositorio.actualizar_registros_seguros("eventos", cambios, "admin")
+
+    # Assert
+    assert afectados == 2
+    with motor_sqlite.connect() as conexion:
+        fila = conexion.execute(
+            text(
+                "SELECT fecha_retiro, fecha_notificacion_retiro FROM fact_eventos_operador "
+                "WHERE id_hecho_evento = 4"
+            )
+        ).one()
+    assert str(fila[0]) == "2026-04-01"
+    assert str(fila[1]) == "2026-03-30"
+
+
+def test_actualizar_registros_seguros_cambia_evaluador_vehiculo_y_observacion(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-02: evaluador, vehículo evaluado y observación se editan y persisten."""
+    # Arrange
+    cambios = [
+        CambioRegistro(2, "Evaluador", "Pedro Ramírez"),
+        CambioRegistro(2, "Vehículo Evaluado", "7"),
+        CambioRegistro(2, "Observación", "Motivo de retiro"),
+    ]
+
+    # Act
+    afectados = repositorio.actualizar_registros_seguros("eventos", cambios, "admin")
+
+    # Assert
+    assert afectados == 3
+    with motor_sqlite.connect() as conexion:
+        fila = conexion.execute(
+            text(
+                "SELECT evaluador, id_vehiculo_evaluado, observacion FROM fact_eventos_operador "
+                "WHERE id_hecho_evento = 2"
+            )
+        ).one()
+    assert str(fila[0]) == "Pedro Ramírez"
+    assert int(fila[1]) == 7
+    assert str(fila[2]) == "Motivo de retiro"
+
+
+def test_actualizar_registros_seguros_cambia_fecha_suspension_y_prueba(
+    repositorio: EventosRepository, motor_sqlite: Engine
+) -> None:
+    """CA-02: las fechas de suspensión y prueba se editan y persisten."""
+    # Arrange
+    cambios = [
+        CambioRegistro(3, "Fecha Suspensión", "2026-05-10"),
+        CambioRegistro(3, "Fecha Prueba", "2026-05-08"),
+    ]
+
+    # Act
+    afectados = repositorio.actualizar_registros_seguros("eventos", cambios, "admin")
+
+    # Assert
+    assert afectados == 2
+    with motor_sqlite.connect() as conexion:
+        fila = conexion.execute(
+            text(
+                "SELECT fecha_suspension, fecha_prueba FROM fact_eventos_operador "
+                "WHERE id_hecho_evento = 3"
+            )
+        ).one()
+    assert str(fila[0]) == "2026-05-10"
+    assert str(fila[1]) == "2026-05-08"
+
+
 # --- Spec 018: listas oficiales de licencias y comportamientos --------------
 def test_actualizar_registros_seguros_licencia_valida_normaliza(
     repositorio: EventosRepository, motor_sqlite: Engine
@@ -1233,6 +1474,46 @@ def test_configuracion_columnas_incluye_la_casilla_de_seleccion() -> None:
     # Assert
     assert ui.ETIQUETA_SELECCION in config
     assert config[ui.ETIQUETA_SELECCION]["type_config"]["type"] == "checkbox"
+
+
+# --- UI (spec 019): columnas de negocio del editor de eventos ---------------
+def test_columnas_protegidas_eventos_deja_las_identificaciones_solo_lectura() -> None:
+    """CA-01/S-03: cédula, nombre y registro quedan protegidos; las de negocio no."""
+    # Arrange / Act
+    protegidas = ui.columnas_protegidas(_definicion("eventos"))
+
+    # Assert
+    assert {"ID", "Cédula", "Nombre", "Registro"}.issubset(set(protegidas))
+    for etiqueta in (
+        "Fecha Certificado",
+        "Fecha Retiro",
+        "Fecha Notif. Retiro",
+        "Fecha Suspensión",
+        "Fecha Prueba",
+        "Evaluador",
+        "Vehículo Evaluado",
+        "Observación",
+    ):
+        assert etiqueta not in protegidas
+
+
+def test_configuracion_columnas_eventos_configura_las_columnas_de_negocio() -> None:
+    """CA-02: el editor expone editables las fechas, evaluador, vehículo y observación."""
+    # Arrange / Act
+    config = ui.configuracion_columnas(_definicion("eventos"), ["Certificación"])
+
+    # Assert
+    for etiqueta in (
+        "Fecha Certificado",
+        "Fecha Retiro",
+        "Fecha Notif. Retiro",
+        "Fecha Suspensión",
+        "Fecha Prueba",
+        "Evaluador",
+        "Observación",
+    ):
+        assert config[etiqueta]["type_config"]["type"] == "text"
+    assert config["Vehículo Evaluado"]["type_config"]["type"] == "number"
 
 
 # --- Criterios de aceptación verificables ------------------------------------

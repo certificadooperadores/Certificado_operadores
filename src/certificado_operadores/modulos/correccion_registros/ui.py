@@ -53,6 +53,7 @@ from certificado_operadores.infra.eventos_repository import (  # noqa: E402
     TIPO_EDICION_DESCRIPCION,
     TIPO_EDICION_ENTERO,
     TIPO_EDICION_EVENTO,
+    TIPO_EDICION_FECHA,
     TIPO_EDICION_FUENTE,
     TIPO_EDICION_GENERO,
     TIPO_EDICION_LICENCIA,
@@ -289,6 +290,10 @@ def _config_editable(
         return st.column_config.SelectboxColumn(columna.etiqueta, options=opciones_descripcion)
     if columna.tipo in (TIPO_EDICION_CODIGO, TIPO_EDICION_ENTERO):
         return st.column_config.NumberColumn(columna.etiqueta, step=1)
+    if columna.tipo == TIPO_EDICION_FECHA:
+        # Las fechas se almacenan como texto ISO (``AAAA-MM-DD``) en SQLite; el
+        # editor las expone como texto editable para no romper la persistencia.
+        return st.column_config.TextColumn(columna.etiqueta, help="Formato AAAA-MM-DD")
     return st.column_config.TextColumn(columna.etiqueta)
 
 
