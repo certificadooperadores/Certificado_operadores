@@ -11,7 +11,10 @@ import streamlit as st
 from ui_sesion import gestionar_sesion_activa, render_controles_sesion_lateral
 from utils import mostrar_badge_version
 
+from certificado_operadores.estilos import inyectar_estilos_metrocali
+
 st.set_page_config(page_title="Reportes", page_icon="📊", layout="wide")
+inyectar_estilos_metrocali()
 if not gestionar_sesion_activa():
     st.error("Acceso Denegado.")
     st.stop()

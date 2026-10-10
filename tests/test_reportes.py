@@ -750,3 +750,81 @@ def test_pagina_compila_sin_errores_de_sintaxis() -> None:
 
     # Act / Assert
     compile(contenido, str(_RUTA_PAGINA), "exec")
+
+
+# --- Spec 023: toolbar horizontal, KPIs y gráfico liviano --------------------
+def test_construir_agregacion_usa_la_columna_total() -> None:
+    """La agregación prefiere la columna de totales cuando existe."""
+    # Arrange
+    df = pd.DataFrame({"Empresa": ["A", "B", "A"], "Tipologia": [1, 2, 1], "Codigos": [2, 5, 3]})
+
+    # Act
+    agregacion = ui.construir_agregacion(df)
+
+    # Assert
+    assert list(agregacion.columns) == [ui.COLUMNA_CATEGORIA, ui.COLUMNA_VALOR]
+    assert set(zip(agregacion["Categoria"], agregacion["Total"], strict=True)) == {
+        ("A", 5),
+        ("B", 5),
+    }
+
+
+def test_construir_agregacion_cuenta_ocurrencias_sin_numericas() -> None:
+    """Sin columnas numéricas la agregación cuenta las ocurrencias."""
+    # Arrange
+    df = pd.DataFrame({"Empresa": ["A", "A", "B"]})
+
+    # Act
+    agregacion = ui.construir_agregacion(df)
+
+    # Assert
+    assert set(zip(agregacion["Categoria"], agregacion["Total"], strict=True)) == {
+        ("A", 2),
+        ("B", 1),
+    }
+
+
+def test_construir_agregacion_vacia() -> None:
+    """Un resultado vacío produce una agregación vacía."""
+    # Arrange / Act
+    agregacion = ui.construir_agregacion(pd.DataFrame())
+
+    # Assert
+    assert agregacion.empty
+
+
+def test_construir_agregacion_respeta_el_limite() -> None:
+    """La agregación se recorta al número máximo de categorías."""
+    # Arrange
+    df = pd.DataFrame({"Empresa": [f"E{indice}" for indice in range(30)], "Total": [1] * 30})
+
+    # Act
+    agregacion = ui.construir_agregacion(df, limite=5)
+
+    # Assert
+    assert len(agregacion) == 5
+
+
+def test_pesos_toolbar_reparto_de_referencia() -> None:
+    """El toolbar usa el reparto de referencia cuando hay cuatro filtros."""
+    # Arrange / Act / Assert
+    assert ui.pesos_toolbar(4) == [2, 2, 1.5, 2, 1]
+    assert ui.pesos_toolbar(1) == [2.0, 1.0]
+
+
+def test_ui_reportes_usa_toolbar_kpis_y_grafico() -> None:
+    """CA-06: la vista agrupa filtros en columnas y muestra KPIs y gráfico."""
+    # Arrange
+    contenido = _RUTA_UI.read_text(encoding="utf-8")
+
+    # Act / Assert
+    assert "st.columns(" in contenido
+    assert "st.metric(" in contenido
+    assert "st.bar_chart(" in contenido
+    assert "horizontal=True" in contenido
+
+
+def test_titulo_reportes_sin_emojis() -> None:
+    """CA-03: el título de reportes no contiene emojis informales."""
+    # Arrange / Act / Assert
+    assert ui.TITULO.isascii()

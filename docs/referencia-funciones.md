@@ -33,6 +33,7 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `reporte_comportamientos` | `src/certificado_operadores/modulos/reporte_comportamientos/ui.py` | Interfaz Streamlit del reporte de comportamientos; consume `ComportamientosRepository` y no contiene SQL. |
 | `infra.reportes_repository` | `src/certificado_operadores/infra/reportes_repository.py` | Acceso a datos de la vista de reportes: catálogos de filtros, consultas consolidadas y auditoría de exportaciones (SQLAlchemy). |
 | `reportes` | `src/certificado_operadores/modulos/reportes/ui.py` | Interfaz Streamlit de reportes y exportaciones; consume `ReportesRepository`, no contiene SQL ni `exec`. |
+| `estilos` | `src/certificado_operadores/estilos.py` | Estilos visuales institucionales de Metrocali, paleta oficial y logo de la barra lateral (spec 023). |
 
 ## Funciones
 
@@ -51,6 +52,8 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | Clase | Campos | Descripción |
 |-------|--------|-------------|
 | `OperadorInfo` | `codigo, cedula, nombres, primer_apellido, segundo_apellido, genero, id_empresa, nombre_empresa, id_perfil_tipologia, id_vigencia` | Datos consolidados de un operador. |
+| `RegistroOperador` | `cedula, nombres, primer_apellido, segundo_apellido, genero, id_empresa, id_perfil_tipologia, codigo=None, id_vigencia=VIGENCIA_ACTIVA` | Datos del formulario para crear/actualizar un operador (spec 023). |
+| `ResultadoOperador` | `exito, mensaje, codigo=None` | Resultado del guardado de un operador (spec 023). |
 | `EstadoCertificado` | `codigo, fecha_certificado, fecha_vencimiento, dias_restantes, estado, cancelado` | Resultado de validar el certificado. |
 | `EstadisticasBasicas` | `total_operadores, operadores_vigentes, operadores_anulados, total_empresas, total_licencias` | Conteos para tableros. |
 
@@ -59,7 +62,9 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 `VIGENCIA_ACTIVA`, `VIGENCIA_ANULADA`, `ANIOS_VIGENCIA_CERTIFICADO`,
 `DIAS_ALERTA_VENCIMIENTO`, `TIPOS_EVENTO_CERTIFICADO`, `TIPO_EVENTO_CANCELACION`
 y los estados `ESTADO_VIGENTE`, `ESTADO_POR_VENCER`, `ESTADO_VENCIDO`,
-`ESTADO_SIN_CERTIFICADO`, `ESTADO_CANCELADO`.
+`ESTADO_SIN_CERTIFICADO`, `ESTADO_CANCELADO`. La spec 023 añade los mensajes del
+guardado de operadores: `MENSAJE_OPERADOR_CREADO`, `MENSAJE_OPERADOR_DUPLICADO`,
+`MENSAJE_OPERADOR_CAMPOS_OBLIGATORIOS` y `MENSAJE_OPERADOR_ERROR`.
 
 ### Módulo `infra` — `src/certificado_operadores/infra/repository.py`
 
@@ -72,6 +77,10 @@ y los estados `ESTADO_VIGENTE`, `ESTADO_POR_VENCER`, `ESTADO_VENCIDO`,
 | `OperadoresRepository.obtener_operador_por_codigo` | `(codigo: int) -> OperadorInfo \| None` | Consulta un operador por código de operación. | `OperadorInfo` o `None` |
 | `OperadoresRepository.validar_certificado` | `(codigo: int) -> EstadoCertificado` | Consulta certificación y cancelaciones; calcula el estado con el dominio. | `EstadoCertificado` |
 | `OperadoresRepository.estadisticas_basicas` | `() -> EstadisticasBasicas` | Conteos generales del sistema. | `EstadisticasBasicas` |
+| `OperadoresRepository.listar_empresas` | `() -> list[EmpresaInfo]` | Spec 023: empresas concesionarias oficiales para el desplegable. | `list[EmpresaInfo]` |
+| `OperadoresRepository.listar_tipologias` | `() -> list[TipologiaInfo]` | Spec 023: tipologías de bus oficiales con su descripción. | `list[TipologiaInfo]` |
+| `OperadoresRepository.existe_operador_vigente` | `(cedula: int) -> bool` | Spec 023: indica si la cédula ya tiene un código vigente. | `bool` |
+| `OperadoresRepository.crear_operador` | `(registro: RegistroOperador, usuario: str = "") -> int` | Spec 023: persiste persona y código, y audita en una sola transacción. | `int` |
 | `OperadoresRepository._consultar_operador` | `(sentencia: TextClause, parametros: dict[str, int]) -> OperadorInfo \| None` | Ejecuta la consulta de operador y mapea la fila al DTO. | `OperadorInfo` o `None` |
 | `_contar` | `(conexion: Connection, sentencia: TextClause, parametros: dict[str, int] \| None = None) -> int` | Ejecuta un `COUNT(*)` de forma segura. | `int` |
 
@@ -86,26 +95,38 @@ y los estados `ESTADO_VIGENTE`, `ESTADO_POR_VENCER`, `ESTADO_VENCIDO`,
 | `OperadoresFacade.obtener_operador_por_codigo` | `(codigo: int) -> OperadorInfo \| None` | Consulta un operador por código de operación. | `OperadorInfo` o `None` |
 | `OperadoresFacade.validar_certificado` | `(codigo: int) -> EstadoCertificado` | Valida la vigencia del certificado de idoneidad. | `EstadoCertificado` |
 | `OperadoresFacade.estadisticas_basicas` | `() -> EstadisticasBasicas` | Conteos generales del sistema. | `EstadisticasBasicas` |
+| `OperadoresFacade.listar_empresas` | `() -> list[EmpresaInfo]` | Spec 023: empresas concesionarias oficiales. | `list[EmpresaInfo]` |
+| `OperadoresFacade.listar_tipologias` | `() -> list[TipologiaInfo]` | Spec 023: tipologías de bus oficiales. | `list[TipologiaInfo]` |
+| `OperadoresFacade.guardar_operador` | `(registro: RegistroOperador, usuario: str = "") -> ResultadoOperador` | Spec 023: valida duplicados y campos obligatorios y persiste el operador. | `ResultadoOperador` |
+| `OperadoresFacade._campos_obligatorios` | `(registro: RegistroOperador) -> bool` | Indica si el registro trae los datos obligatorios. | `bool` |
 
 ### Módulo `admin_operadores` — `src/certificado_operadores/modulos/admin_operadores/ui.py`
 
-Interfaz de Streamlit del módulo de administración de operadores (spec 003).
-Página delgada: busca la cédula en `OperadoresFacade` y autocompleta el
-formulario con el DTO `OperadorInfo`. No contiene sentencias de base de datos
+Interfaz de Streamlit del módulo de administración de operadores (specs 003 y
+023). Página delgada: busca la cédula en `OperadoresFacade` y presenta un
+formulario horizontal con los datos personales y los desplegables oficiales de
+empresa y tipología; el botón **Guardar Operador** delega en
+`OperadoresFacade.guardar_operador`. No contiene sentencias de base de datos
 (RNF-01) ni conoce el esquema (RNF-02).
 
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
 | `parsear_cedula` | `(texto: str) -> int \| None` | Convierte el texto del campo en una cédula positiva. | `int` o `None` |
-| `construir_valores_formulario` | `(operador: OperadorInfo \| None) -> dict[str, Any]` | Mapea el DTO del Facade a los valores por defecto del formulario (estado Creación/Actualización). | `dict` |
-| `_indice_genero` | `(genero: str) -> int` | Índice del género dentro de `GENEROS`. | `int` |
+| `construir_valores_formulario` | `(operador: OperadorInfo \| None, cedula: int \| None = None) -> dict[str, Any]` | Mapea el DTO del Facade a los valores por defecto del formulario (estado Creación/Actualización). | `dict` |
+| `construir_registro` | `(datos: dict[str, Any]) -> RegistroOperador` | Spec 023: traduce los valores del formulario al DTO de guardado. | `RegistroOperador` |
+| `_a_entero` | `(valor: Any) -> int` | Convierte un identificador opcional a entero (o cero). | `int` |
+| `_a_entero_opcional` | `(valor: Any) -> int \| None` | Convierte un identificador opcional a entero o `None`. | `int` o `None` |
+| `_indice_genero` | `(genero: str) -> int` | Índice de la etiqueta de género dentro de `GENEROS`. | `int` |
+| `_indice_opcion` | `(catalogo: dict[str, int], valor: Any) -> int` | Índice de la opción cuyo identificador coincide. | `int` |
 | `_texto_opcional` | `(valor: Any) -> str` | Convierte un identificador opcional a texto. | `str` |
-| `_render_encabezado` | `() -> None` | Título, estilos y ayuda del módulo. | — |
-| `_render_formulario` | `(valores: dict[str, Any]) -> None` | Pinta el formulario autocompletado. | — |
+| `_render_encabezado` | `() -> None` | Título y subtítulo descriptivo del módulo. | — |
+| `_render_formulario` | `(valores: dict[str, Any], fachada: OperadoresFacade) -> None` | Spec 023: formulario horizontal con desplegables oficiales y botón Guardar. | — |
 | `_render_consulta` | `(fachada: OperadoresFacade) -> None` | Captura la cédula, consulta el Facade y autocompleta. | — |
 | `render_page` | `(fachada: OperadoresFacade \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
 
-Constantes: `GENEROS`, `ESTADO_CREACION`, `ESTADO_ACTUALIZACION`.
+Constantes: `GENEROS` (Masculino/Femenino/Otro), `CODIGO_GENERO`,
+`ETIQUETA_GENERO_POR_CODIGO`, `ESTADO_CREACION`, `ESTADO_ACTUALIZACION` y los
+textos de la vista (`ENCABEZADO_*`, `ETIQUETA_*`, `MENSAJE_*`).
 
 Punto de entrada: `src/certificado_operadores/pages/2_Administracion_Operadores.py`
 (importa `OperadoresFacade` y delega en `render_page`).
@@ -119,6 +140,39 @@ Punto de entrada: `src/certificado_operadores/pages/2_Administracion_Operadores.
   de la búsqueda por cédula en el Facade (RF-01), autocompletado del formulario
   con el `OperadorInfo` (RF-02) y el caso de borde de operador no encontrado
   (estado "Creación"). Patrón AAA con un doble de Facade y un doble de Streamlit.
+- **Ubicación (spec 023):** `tests/test_admin_operadores_guardado.py`
+- **Cobertura (spec 023):** catálogos `listar_empresas`/`listar_tipologias`,
+  detección de duplicados, `OperadoresFacade.guardar_operador` (creación con
+  auditoría, duplicado, campos obligatorios y error de persistencia), funciones
+  puras `construir_registro`/`_indice_genero` y criterios estáticos (botón
+  Guardar y `guardar_operador` CA-05, formulario en columnas y desplegables
+  CA-04, UI sin SQL). Patrón AAA contra SQLite temporal.
+
+### Módulo `estilos` — `src/certificado_operadores/estilos.py`
+
+Estilos visuales institucionales de Metrocali (spec 023). Capa de presentación
+pura que centraliza la paleta clara oficial (azul `#046BD2`, fondo `#FFFFFF`,
+fondo suave `#F8FAFC`, texto `#111827` y borde `#E5E7EB`), inyecta el CSS de
+márgenes, tarjetas y pestañas, y publica el logo oficial en la barra lateral. No
+accede a la base de datos.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `ruta_logo` | `() -> Path` | Resuelve la ruta del logo oficial (con variable de entorno opcional). | `Path` |
+| `inyectar_estilos_metrocali` | `() -> None` | Inyecta el CSS institucional y muestra el logo lateral con `st.logo`. | — |
+
+Constantes: `COLOR_PRIMARIO`, `COLOR_FONDO`, `COLOR_FONDO_SUAVE`,
+`COLOR_TEXTO`, `COLOR_TEXTO_SECUNDARIO`, `COLOR_BORDE`, `NOMBRE_ARCHIVO_LOGO` y
+`VARIABLE_ENTORNO_LOGO`. Se invoca desde `Inicio.py` y las tres páginas de
+`pages/`.
+
+### Módulo `estilos` — pruebas
+
+- **Ubicación:** `tests/test_estilos.py`
+- **Cobertura (spec 023):** paleta del tema global en `.streamlit/config.toml`
+  (CA-01), ruta del logo por defecto y por variable de entorno (CA-02), e
+  inyección del CSS y del logo (con y sin archivo) mediante un doble de
+  Streamlit. Patrón AAA.
 
 ### Módulo `domain.usuarios` — `src/certificado_operadores/domain/usuarios.py`
 
@@ -851,8 +905,9 @@ Constantes: `TIPO_MIME_EXCEL`, `TIPO_MIME_CSV`, `ACCION_EXPORTAR_REPORTE`,
 
 ### Módulo `reportes` — `src/certificado_operadores/modulos/reportes/ui.py`
 
-Interfaz Streamlit de reportes y exportaciones (spec 010): selección del reporte,
-captura de filtros, resultados y descargas. Delega todo el acceso a datos en
+Interfaz Streamlit de reportes y exportaciones (specs 010 y 023): selección del
+reporte, **toolbar de filtros en una sola fila**, resultados con KPIs, gráfico de
+barras nativo y descargas. Delega todo el acceso a datos en
 `ReportesRepository`; no contiene sentencias SQL (RNF-01) ni conoce el esquema.
 El paquete expone `render_reportes` en
 `src/certificado_operadores/modulos/reportes/__init__.py`.
@@ -860,12 +915,20 @@ El paquete expone `render_reportes` en
 | Función | Firma | Descripción | Devuelve |
 |---------|-------|-------------|----------|
 | `parsear_entero` | `(texto: str) -> int \| None` | Convierte el campo de búsqueda en entero. | `int` o `None` |
-| `_construir_seleccion` | `(definicion: DefinicionReporte, repositorio: ReportesRepository) -> SeleccionFiltros` | Renderiza los controles y devuelve la selección tipada. | `SeleccionFiltros` |
-| `_render_resultado` | `(df: pd.DataFrame \| None, definicion, repositorio, usuario: str) -> None` | Muestra resultados, exportaciones y auditoría. | — |
+| `pesos_toolbar` | `(numero_filtros: int) -> list[float]` | Spec 023: anchos del toolbar horizontal (`[2, 2, 1.5, 2, 1]` de referencia). | `list[float]` |
+| `construir_agregacion` | `(df: pd.DataFrame, limite: int = LIMITE_GRAFICO) -> pd.DataFrame` | Spec 023: agrega el resultado para el gráfico de barras nativo. | `pd.DataFrame` |
+| `_render_filtro` | `(filtro_tipo, filtro_etiqueta, defecto, repositorio, definicion) -> Any` | Spec 023: pinta un filtro y devuelve su valor tipado. | `Any` |
+| `_construir_seleccion` | `(definicion: DefinicionReporte, repositorio: ReportesRepository) -> tuple[SeleccionFiltros, bool]` | Spec 023: barra horizontal de filtros y botón. | `tuple` |
+| `_render_kpis` | `(df: pd.DataFrame) -> None` | Spec 023: tarjetas métricas ejecutivas (`st.metric`). | — |
+| `_render_grafico` | `(df: pd.DataFrame) -> None` | Spec 023: gráfico de barras horizontal nativo (`st.bar_chart`). | — |
+| `_render_resultado` | `(df: pd.DataFrame \| None, definicion, repositorio, usuario: str) -> None` | Muestra KPIs, tabla, gráfico, exportaciones y auditoría. | — |
 | `render_reportes` | `(repositorio: ReportesRepository \| None = None) -> None` | Renderiza la vista completa (punto de entrada de `pages/`). | — |
 
-Constantes: `TITULO`, `DESCRIPCION`, `USUARIO_POR_DEFECTO`, `ETIQUETA_EJECUTAR`,
-`OPCION_TODAS`, `OPCION_TODOS` y `MENSAJE_SIN_RESULTADOS`. Punto de entrada:
+Constantes: `TITULO`, `SUBTITULO`, `USUARIO_POR_DEFECTO`, `ETIQUETA_EJECUTAR`
+(`Filtrar`), `OPCION_TODAS`, `OPCION_TODOS`, `MENSAJE_SIN_RESULTADOS`,
+`PROPORCIONES_TOOLBAR`, `PESO_FILTRO`, `PESO_BOTON`, `LIMITE_GRAFICO`,
+`COLUMNA_CATEGORIA`, `COLUMNA_VALOR`, `COLUMNAS_TOTAL` y los rótulos `KPI_*` y
+`TITULO_GRAFICO`. Punto de entrada:
 `src/certificado_operadores/pages/3_Reportes.py` (importa `render_reportes` y lo
 invoca; la página queda 100% libre de `exec`, cerrando la Fase 3).
 
@@ -878,10 +941,12 @@ invoca; la página queda 100% libre de `exec`, cerrando la Fase 3).
   certificados por vencer/vencidos con fechas relativas al día— verificando que
   ninguno arroje errores de sintaxis SQLite), funciones puras (condiciones por
   tipo de filtro, construcción de consulta, descripción de tipologías y
-  generación de Excel/CSV), auditoría de exportación y criterios estáticos
-  (paquete CA-01, UI sin SQL RNF-01, repositorio que encapsula la SQL CA-03 y
-  sin sintaxis PostgreSQL CA-01, página sin `exec` con `render_reportes`
-  CA-02/RNF-02). Patrón AAA.
+  generación de Excel/CSV), de la spec 023 la agregación para el gráfico
+  (`construir_agregacion` con totales, ocurrencias, vacío y límite) y el reparto
+  del toolbar (`pesos_toolbar`), auditoría de exportación y criterios estáticos
+  (paquete CA-01, UI sin SQL RNF-01, toolbar/KPIs/gráfico CA-06, repositorio que
+  encapsula la SQL CA-03 y sin sintaxis PostgreSQL CA-01, página sin `exec` con
+  `render_reportes` CA-02/RNF-02). Patrón AAA.
 
 ## Detalle
 

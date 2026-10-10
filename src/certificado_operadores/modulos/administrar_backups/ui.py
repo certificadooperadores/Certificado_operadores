@@ -114,7 +114,7 @@ def filas_comparacion(comparacion: list[dict[str, object]]) -> list[dict[str, ob
 
 def _render_encabezado() -> None:
     """Pinta el título y la ayuda del módulo."""
-    st.title("💾 Gestión de Backups")
+    st.title("Gestión de Backups")
     st.markdown(
         "Desde aquí puedes crear, proteger, eliminar, comparar y restaurar backups "
         "de la base de datos."
@@ -127,7 +127,7 @@ def _render_creacion(fachada: BackupService) -> None:
     Args:
         fachada: Servicio de backups inyectado desde el punto de entrada.
     """
-    st.subheader("📦 Crear Nuevo Backup")
+    st.subheader("Crear Nuevo Backup")
     confirmar = st.checkbox(
         "Entiendo que el backup se guardará con la fecha y hora actual.",
         key="backup_confirmar",
@@ -284,7 +284,7 @@ def render_administrar_backups(fachada: BackupService | None = None) -> None:
     _render_creacion(fachada)
 
     st.markdown("---")
-    st.subheader("📋 Backups Existentes")
+    st.subheader("Backups Existentes")
     if not respaldos:
         st.info("No hay backups disponibles en la carpeta configurada.")
         return

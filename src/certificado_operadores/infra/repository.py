@@ -12,6 +12,7 @@ enlazados (nunca SQL construido con datos del usuario).
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import TYPE_CHECKING
 
 from sqlalchemy import TextClause, bindparam, text
@@ -25,7 +26,13 @@ from certificado_operadores.domain.models import (
     EstadisticasBasicas,
     EstadoCertificado,
     OperadorInfo,
+    RegistroOperador,
     calcular_estado_certificado,
+)
+from certificado_operadores.infra.reportes_repository import (
+    EmpresaInfo,
+    TipologiaInfo,
+    construir_descripcion_tipologia,
 )
 
 if TYPE_CHECKING:
@@ -73,6 +80,79 @@ _SQL_TOTAL_OPERADORES = text("SELECT COUNT(*) FROM dim_codigo")
 _SQL_OPERADORES_POR_VIGENCIA = text("SELECT COUNT(*) FROM dim_codigo WHERE id_vigencia = :vigencia")
 _SQL_TOTAL_EMPRESAS = text("SELECT COUNT(*) FROM dim_empresa")
 _SQL_TOTAL_LICENCIAS = text("SELECT COUNT(*) FROM fact_licencias")
+
+# --- Guardado de operadores (spec 023) --------------------------------------
+ACCION_CREAR_OPERADOR = "CREAR_OPERADOR"
+"""Acción registrada en ``log_auditoria`` al persistir un operador."""
+
+FORMATO_FECHA_HORA = "%Y-%m-%d %H:%M:%S"
+"""Formato de fecha y hora usado en las columnas de auditoría."""
+
+_SQL_LISTAR_EMPRESAS = text(
+    "SELECT id_empresa, nombre_empresa FROM dim_empresa ORDER BY id_empresa"
+)
+
+_SQL_LISTAR_TIPOLOGIAS = text(
+    """
+    SELECT id_perfil_tipologia, autoriza_articulado, autoriza_padron,
+           autoriza_complementario, autoriza_auxiliar
+    FROM dim_perfil_tipologia
+    ORDER BY id_perfil_tipologia
+    """
+)
+
+_SQL_CONTAR_OPERADOR_VIGENTE = text(
+    """
+    SELECT COUNT(*)
+    FROM dim_codigo
+    WHERE id_persona = :cedula AND id_vigencia = :vigencia
+    """
+)
+
+_SQL_CONTAR_PERSONA = text("SELECT COUNT(*) FROM dim_persona WHERE id_persona = :cedula")
+
+_SQL_INSERT_PERSONA = text(
+    """
+    INSERT INTO dim_persona
+        (id_persona, primer_apellido, segundo_apellido, nombres, genero,
+         id_vigencia, fecha_registro, usuario_registra)
+    VALUES
+        (:cedula, :primer_apellido, :segundo_apellido, :nombres, :genero,
+         :vigencia, :fecha, :usuario)
+    """
+)
+
+_SQL_ACTUALIZAR_PERSONA = text(
+    """
+    UPDATE dim_persona
+    SET primer_apellido = :primer_apellido,
+        segundo_apellido = :segundo_apellido,
+        nombres = :nombres,
+        genero = :genero,
+        fecha_registro = :fecha,
+        usuario_registra = :usuario
+    WHERE id_persona = :cedula
+    """
+)
+
+_SQL_SIGUIENTE_CODIGO = text("SELECT COALESCE(MAX(id_codigo), 0) + 1 FROM dim_codigo")
+
+_SQL_INSERT_CODIGO = text(
+    """
+    INSERT INTO dim_codigo
+        (id_codigo, id_persona, id_empresa, id_perfil_tipologia, id_vigencia,
+         fecha_registro, usuario_registra)
+    VALUES
+        (:codigo, :cedula, :empresa, :tipologia, :vigencia, :fecha, :usuario)
+    """
+)
+
+_SQL_INSERT_AUDITORIA = text(
+    """
+    INSERT INTO log_auditoria (usuario, accion, detalles)
+    VALUES (:usuario, :accion, :detalles)
+    """
+)
 
 
 def _contar(
@@ -202,6 +282,116 @@ class OperadoresRepository:
         except SQLAlchemyError:
             return EstadisticasBasicas(0, 0, 0, 0, 0)
         return EstadisticasBasicas(total, vigentes, anulados, empresas, licencias)
+
+    def listar_empresas(self) -> list[EmpresaInfo]:
+        """Lista las empresas concesionarias oficiales ordenadas por id.
+
+        Returns:
+            Las empresas disponibles para el desplegable del formulario.
+        """
+        with self.motor.connect() as conexion:
+            filas = conexion.execute(_SQL_LISTAR_EMPRESAS).mappings().all()
+        return [
+            EmpresaInfo(
+                id_empresa=int(fila["id_empresa"]),
+                nombre_empresa=str(fila["nombre_empresa"] or ""),
+            )
+            for fila in filas
+        ]
+
+    def listar_tipologias(self) -> list[TipologiaInfo]:
+        """Lista las tipologías de bus oficiales con su descripción legible.
+
+        Returns:
+            Las tipologías disponibles para el desplegable del formulario.
+        """
+        with self.motor.connect() as conexion:
+            filas = conexion.execute(_SQL_LISTAR_TIPOLOGIAS).mappings().all()
+        return [
+            TipologiaInfo(
+                id_perfil_tipologia=int(fila["id_perfil_tipologia"]),
+                descripcion=construir_descripcion_tipologia(
+                    int(fila["id_perfil_tipologia"]),
+                    bool(fila["autoriza_articulado"]),
+                    bool(fila["autoriza_padron"]),
+                    bool(fila["autoriza_complementario"]),
+                    bool(fila["autoriza_auxiliar"]),
+                ),
+            )
+            for fila in filas
+        ]
+
+    def existe_operador_vigente(self, cedula: int) -> bool:
+        """Indica si la cédula ya tiene un código de operación vigente.
+
+        Args:
+            cedula: Número de documento del operador.
+
+        Returns:
+            ``True`` si existe al menos un código vigente para la cédula.
+        """
+        with self.motor.connect() as conexion:
+            total = conexion.execute(
+                _SQL_CONTAR_OPERADOR_VIGENTE,
+                {"cedula": cedula, "vigencia": VIGENCIA_ACTIVA},
+            ).scalar_one()
+        return int(total) > 0
+
+    def crear_operador(self, registro: RegistroOperador, usuario: str = "") -> int:
+        """Persiste un operador nuevo en ``dim_persona`` y ``dim_codigo``.
+
+        Inserta (o actualiza si la persona ya existe) la fila de ``dim_persona``,
+        asigna el siguiente código de operación en ``dim_codigo`` y registra la
+        acción en ``log_auditoria`` dentro de la **misma transacción** para que
+        el guardado sea atómico.
+
+        Args:
+            registro: Datos del operador capturados por la interfaz.
+            usuario: Usuario que realiza el guardado (para auditoría).
+
+        Returns:
+            El código de operación asignado al operador.
+        """
+        fecha = datetime.now().strftime(FORMATO_FECHA_HORA)
+        datos_persona = {
+            "cedula": registro.cedula,
+            "primer_apellido": registro.primer_apellido,
+            "segundo_apellido": registro.segundo_apellido,
+            "nombres": registro.nombres,
+            "genero": registro.genero,
+            "vigencia": registro.id_vigencia,
+            "fecha": fecha,
+            "usuario": usuario,
+        }
+        with self.motor.begin() as conexion:
+            existe = conexion.execute(_SQL_CONTAR_PERSONA, {"cedula": registro.cedula}).scalar_one()
+            if int(existe) > 0:
+                conexion.execute(_SQL_ACTUALIZAR_PERSONA, datos_persona)
+            else:
+                conexion.execute(_SQL_INSERT_PERSONA, datos_persona)
+
+            codigo = int(conexion.execute(_SQL_SIGUIENTE_CODIGO).scalar_one())
+            conexion.execute(
+                _SQL_INSERT_CODIGO,
+                {
+                    "codigo": codigo,
+                    "cedula": registro.cedula,
+                    "empresa": registro.id_empresa,
+                    "tipologia": registro.id_perfil_tipologia,
+                    "vigencia": registro.id_vigencia,
+                    "fecha": fecha,
+                    "usuario": usuario,
+                },
+            )
+            conexion.execute(
+                _SQL_INSERT_AUDITORIA,
+                {
+                    "usuario": usuario,
+                    "accion": ACCION_CREAR_OPERADOR,
+                    "detalles": f"Cédula {registro.cedula} - código {codigo}",
+                },
+            )
+        return codigo
 
     def _consultar_operador(
         self, sentencia: TextClause, parametros: dict[str, int]

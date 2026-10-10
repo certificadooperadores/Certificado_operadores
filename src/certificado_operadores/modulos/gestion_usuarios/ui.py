@@ -72,7 +72,7 @@ def nombres_usuarios(usuarios: list[UsuarioInfo]) -> list[str]:
 
 def _render_encabezado() -> None:
     """Pinta el título y la ayuda del módulo."""
-    st.title("🔐 Gestión de Usuarios del Sistema")
+    st.title("Gestión de Usuarios del Sistema")
     st.markdown("Administra los accesos, roles y contraseñas de la plataforma.")
 
 
@@ -96,7 +96,7 @@ def _render_alta(
         roles_disponibles: Roles que puede asignar el solicitante.
         usuario_solicitante: Usuario que ejecuta la acción (para auditoría).
     """
-    st.subheader("➕ Agregar Nuevo Usuario")  # noqa: RUF001
+    st.subheader("Agregar Nuevo Usuario")
     with st.form("form_nuevo_usuario"):
         nuevo_usuario = st.text_input("Nombre de Usuario").strip().lower()
         nueva_contrasena = st.text_input("Contraseña", type="password")
@@ -131,7 +131,7 @@ def _render_modificacion(
         rol_solicitante: Rol de quien ejecuta la operación.
         usuario_solicitante: Usuario que ejecuta la operación.
     """
-    st.subheader("🔄 Modificar Usuario Existente")
+    st.subheader("Modificar Usuario Existente")
     with st.form("form_mod_usuario"):
         usuario_seleccionado = st.selectbox("Seleccione Usuario", nombres_usuarios(usuarios))
         nuevo_rol = st.selectbox("Nuevo Rol", roles_disponibles)

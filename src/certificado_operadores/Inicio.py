@@ -28,6 +28,7 @@ if str(_RUTA_SRC) not in sys.path:
 from ui_sesion import gestionar_sesion_activa, render_controles_sesion_lateral  # noqa: E402
 from utils import mostrar_badge_version  # noqa: E402
 
+from certificado_operadores.estilos import inyectar_estilos_metrocali  # noqa: E402
 from certificado_operadores.facade_usuarios import UsuariosFacade  # noqa: E402
 
 st.set_page_config(page_title="Gestión de Operadores", page_icon="🚌", layout="wide")
@@ -35,12 +36,13 @@ st.markdown(
     "<style>#MainMenu {visibility: hidden;} footer {visibility: hidden;}</style>",
     unsafe_allow_html=True,
 )
+inyectar_estilos_metrocali()
 
 # Restaura la sesión desde el token de la URL (spec 013) antes de decidir si se
 # muestra el login. Si el token expiró, ``gestionar_sesion_activa`` ya lo limpia.
 if not gestionar_sesion_activa():
-    st.title("🚌 Plataforma de Gestión de Operadores")
-    st.subheader("🔒 Iniciar Sesión")
+    st.title("Plataforma de Gestión de Operadores")
+    st.subheader("Iniciar Sesión")
     with st.form("login"):
         u = st.text_input("Usuario")
         p = st.text_input("Contraseña", type="password")
@@ -59,5 +61,5 @@ if not gestionar_sesion_activa():
 
 render_controles_sesion_lateral(pagina_inicio=True)
 
-st.title("🚌 Plataforma de Gestión de Operadores")
+st.title("Plataforma de Gestión de Operadores")
 mostrar_badge_version()

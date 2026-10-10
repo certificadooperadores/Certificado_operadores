@@ -43,7 +43,7 @@ from certificado_operadores.infra.comportamientos_repository import (  # noqa: E
     ReincidenciaInfo,
 )
 
-TITULO = "📋 Reporte de Comportamientos"
+TITULO = "Reporte de Comportamientos"
 """Título de la vista del reporte de comportamientos."""
 
 USUARIO_POR_DEFECTO = "Usuario"
@@ -932,7 +932,7 @@ def render_reporte_comportamientos(repositorio: ComportamientosRepository | None
         unsafe_allow_html=True,
     )
     tab_manual, tab_masiva, tab_reinc = st.tabs(
-        ["📝 Ingreso Individual", "📦 Carga Masiva (Excel)", "🔁 Reincidencia"]
+        ["Ingreso Individual", "Carga Masiva (Excel)", "Reincidencia"]
     )
     with tab_manual:
         _render_individual(repositorio, usuario)

@@ -14,7 +14,10 @@ import streamlit as st
 from ui_sesion import gestionar_sesion_activa, render_controles_sesion_lateral
 from utils import mostrar_badge_version
 
+from certificado_operadores.estilos import inyectar_estilos_metrocali
+
 st.set_page_config(page_title="Administración de Operadores", page_icon="📋", layout="wide")
+inyectar_estilos_metrocali()
 if not gestionar_sesion_activa():
     st.error("Acceso Denegado.")
     st.stop()
@@ -27,9 +30,7 @@ from modulos.admin_operadores import OperadoresFacade, render_page  # noqa: E402
 from modulos.gestion_certificados import render_gestion_certificados  # noqa: E402
 from modulos.reporte_comportamientos import render_reporte_comportamientos  # noqa: E402
 
-t1, t2, t3 = st.tabs(
-    ["👨‍✈️ Operadores", "📅 Gestión de Certificados", "📋 Reporte de Comportamientos"]
-)
+t1, t2, t3 = st.tabs(["Operadores", "Gestión de Certificados", "Reporte de Comportamientos"])
 with t1:
     render_page(OperadoresFacade())
 with t2:

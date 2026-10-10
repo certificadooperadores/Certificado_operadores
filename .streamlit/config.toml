@@ -3,3 +3,12 @@ runOnSave = false
 fileWatcherType = "none"
 enableCORS = false
 enableXsrfProtection = false
+
+# Paleta clara institucional de Metrocali (spec 023). El azul primario
+# #046BD2 reemplaza el rojo de acento por defecto de Streamlit.
+[theme]
+primaryColor = "#046BD2"
+backgroundColor = "#FFFFFF"
+secondaryBackgroundColor = "#F8FAFC"
+textColor = "#111827"
+font = "sans serif"

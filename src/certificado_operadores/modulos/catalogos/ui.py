@@ -60,7 +60,7 @@ ACCION_INACTIVAR = "Inactivar"
 ACCIONES_ESTADO: tuple[str, ...] = (ACCION_ACTIVAR, ACCION_INACTIVAR)
 """Opciones del selector de cambio de estado de empresa."""
 
-TITULO = "⚙️ Catálogos"
+TITULO = "Catálogos"
 """Título de la pestaña de catálogos."""
 
 
@@ -586,11 +586,11 @@ def render_catalogos(repositorio: CatalogosRepository | None = None) -> None:
     st.title(TITULO)
     tab_empresas, tab_vehiculos, tab_impactos, tab_comportamientos, tab_detalles = st.tabs(
         [
-            "🏢 Empresas",
-            "🚌 Vehículos",
-            "⚠️ Impactos",
-            "📋 Comportamientos",
-            "🔍 Detalle Comportamiento",
+            "Empresas",
+            "Vehículos",
+            "Impactos",
+            "Comportamientos",
+            "Detalle Comportamiento",
         ]
     )
     with tab_empresas:

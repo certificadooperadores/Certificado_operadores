@@ -52,7 +52,7 @@ from certificado_operadores.infra.certificados_repository import (  # noqa: E402
 )
 from certificado_operadores.infra.eventos_repository import TipoEventoInfo  # noqa: E402
 
-TITULO = "📅 Registro de Eventos e Historial"
+TITULO = "Registro de Eventos e Historial"
 """Título de la vista de gestión de certificados."""
 
 EVALUADOR_OTRO = "➕ OTRO (Nuevo Evaluador)"  # noqa: RUF001 - emoji intencional del diseño

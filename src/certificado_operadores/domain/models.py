@@ -47,6 +47,21 @@ ESTADO_SIN_CERTIFICADO = "SIN_CERTIFICADO"
 ESTADO_CANCELADO = "CANCELADO"
 """Estado de un operador con un evento de cancelación."""
 
+# --- Mensajes de guardado de operadores (spec 023) --------------------------
+MENSAJE_OPERADOR_CREADO = "Operador guardado exitosamente."
+"""Mensaje devuelto cuando el operador se persiste correctamente."""
+
+MENSAJE_OPERADOR_DUPLICADO = "La cédula ya tiene un operador vigente registrado."
+"""Mensaje devuelto cuando la cédula ya cuenta con un código vigente."""
+
+MENSAJE_OPERADOR_CAMPOS_OBLIGATORIOS = (
+    "Cédula, nombres, apellidos, empresa y tipología son obligatorios."
+)
+"""Mensaje devuelto cuando falta algún dato obligatorio del operador."""
+
+MENSAJE_OPERADOR_ERROR = "No se pudo guardar el operador. Verifica los datos e inténtalo de nuevo."
+"""Mensaje devuelto ante un fallo inesperado de persistencia."""
+
 
 @dataclass(frozen=True)
 class OperadorInfo:
@@ -67,6 +82,42 @@ class OperadorInfo:
         """Devuelve el nombre completo del operador en una sola cadena."""
         partes = (self.nombres, self.primer_apellido, self.segundo_apellido)
         return " ".join(parte for parte in partes if parte).strip()
+
+
+@dataclass(frozen=True)
+class RegistroOperador:
+    """Datos capturados por la interfaz para crear o actualizar un operador.
+
+    Es el DTO de entrada del caso de uso de guardado (spec 023): la UI lo
+    construye a partir del formulario y la fachada lo persiste a través del
+    repositorio. ``codigo`` es ``None`` cuando el operador es nuevo; si viene
+    informado corresponde al código vigente que se desea actualizar.
+    """
+
+    cedula: int
+    nombres: str
+    primer_apellido: str
+    segundo_apellido: str
+    genero: str
+    id_empresa: int
+    id_perfil_tipologia: int
+    codigo: int | None = None
+    id_vigencia: int = VIGENCIA_ACTIVA
+
+
+@dataclass(frozen=True)
+class ResultadoOperador:
+    """Resultado de un intento de guardado de operador, listo para la UI.
+
+    Attributes:
+        exito: ``True`` si el operador se persistió correctamente.
+        mensaje: Mensaje listo para mostrar en la interfaz.
+        codigo: Código de operación asignado o actualizado; ``None`` si falló.
+    """
+
+    exito: bool
+    mensaje: str
+    codigo: int | None = None
 
 
 @dataclass(frozen=True)

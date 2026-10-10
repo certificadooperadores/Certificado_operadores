@@ -14,6 +14,15 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from sqlalchemy.exc import SQLAlchemyError
+
+from certificado_operadores.domain.models import (
+    MENSAJE_OPERADOR_CAMPOS_OBLIGATORIOS,
+    MENSAJE_OPERADOR_CREADO,
+    MENSAJE_OPERADOR_DUPLICADO,
+    MENSAJE_OPERADOR_ERROR,
+    ResultadoOperador,
+)
 from certificado_operadores.infra.repository import OperadoresRepository
 
 if TYPE_CHECKING:
@@ -23,7 +32,9 @@ if TYPE_CHECKING:
         EstadisticasBasicas,
         EstadoCertificado,
         OperadorInfo,
+        RegistroOperador,
     )
+    from certificado_operadores.infra.reportes_repository import EmpresaInfo, TipologiaInfo
 
 
 class OperadoresFacade:
@@ -102,3 +113,64 @@ class OperadoresFacade:
             tableros.
         """
         return self._repositorio.estadisticas_basicas()
+
+    def listar_empresas(self) -> list[EmpresaInfo]:
+        """Lista las empresas concesionarias oficiales.
+
+        Returns:
+            Las empresas disponibles para el desplegable del formulario.
+        """
+        return self._repositorio.listar_empresas()
+
+    def listar_tipologias(self) -> list[TipologiaInfo]:
+        """Lista las tipologías de bus oficiales con su descripción.
+
+        Returns:
+            Las tipologías disponibles para el desplegable del formulario.
+        """
+        return self._repositorio.listar_tipologias()
+
+    def guardar_operador(self, registro: RegistroOperador, usuario: str = "") -> ResultadoOperador:
+        """Persiste un operador validando duplicados y campos obligatorios.
+
+        Caso de uso de la spec 023: valida que los datos obligatorios estén
+        presentes, impide registrar una segunda vigencia para una cédula que ya
+        tiene un código vigente y delega la escritura en el repositorio. Devuelve
+        un resultado con mensaje listo para la interfaz en lugar de propagar la
+        excepción de persistencia.
+
+        Args:
+            registro: Datos del operador capturados por el formulario.
+            usuario: Usuario que realiza el guardado (para auditoría).
+
+        Returns:
+            El resultado del guardado con el código asignado cuando tiene éxito.
+        """
+        if not self._campos_obligatorios(registro):
+            return ResultadoOperador(False, MENSAJE_OPERADOR_CAMPOS_OBLIGATORIOS)
+        try:
+            if self._repositorio.existe_operador_vigente(registro.cedula):
+                return ResultadoOperador(False, MENSAJE_OPERADOR_DUPLICADO)
+            codigo = self._repositorio.crear_operador(registro, usuario)
+        except SQLAlchemyError:
+            return ResultadoOperador(False, MENSAJE_OPERADOR_ERROR)
+        return ResultadoOperador(True, MENSAJE_OPERADOR_CREADO, codigo)
+
+    @staticmethod
+    def _campos_obligatorios(registro: RegistroOperador) -> bool:
+        """Indica si el registro trae todos los datos obligatorios.
+
+        Args:
+            registro: Datos del operador.
+
+        Returns:
+            ``True`` si la cédula, los nombres, los apellidos, la empresa y la
+            tipología están informados.
+        """
+        return bool(
+            registro.cedula
+            and registro.nombres.strip()
+            and registro.primer_apellido.strip()
+            and registro.id_empresa
+            and registro.id_perfil_tipologia
+        )

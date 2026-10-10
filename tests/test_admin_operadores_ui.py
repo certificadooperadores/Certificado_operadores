@@ -215,10 +215,12 @@ def test_render_consulta_delega_la_busqueda_en_el_facade(
     st_falso = _StreamlitFalso("1002")
     capturado: list[dict[str, Any]] = []
     monkeypatch.setattr(ui, "st", st_falso)
-    monkeypatch.setattr(ui, "_render_formulario", capturado.append)
+    monkeypatch.setattr(
+        ui, "_render_formulario", lambda valores, fachada: capturado.append(valores)
+    )
 
     # Act
-    ui._render_consulta(fachada)  # type: ignore[arg-type]
+    ui._render_consulta(fachada)  # ty: ignore[invalid-argument-type]
 
     # Assert
     assert fachada.cedulas == [1002]
@@ -237,10 +239,12 @@ def test_render_consulta_muestra_creacion_cuando_no_existe(
     st_falso = _StreamlitFalso("99999999")
     capturado: list[dict[str, Any]] = []
     monkeypatch.setattr(ui, "st", st_falso)
-    monkeypatch.setattr(ui, "_render_formulario", capturado.append)
+    monkeypatch.setattr(
+        ui, "_render_formulario", lambda valores, fachada: capturado.append(valores)
+    )
 
     # Act
-    ui._render_consulta(fachada)  # type: ignore[arg-type]
+    ui._render_consulta(fachada)  # ty: ignore[invalid-argument-type]
 
     # Assert
     assert fachada.cedulas == [99999999]
@@ -256,10 +260,10 @@ def test_render_consulta_no_consulta_sin_cedula_valida(
     fachada = _FachadaFalsa(None)
     st_falso = _StreamlitFalso("abc")
     monkeypatch.setattr(ui, "st", st_falso)
-    monkeypatch.setattr(ui, "_render_formulario", lambda valores: None)
+    monkeypatch.setattr(ui, "_render_formulario", lambda valores, fachada: None)
 
     # Act
-    ui._render_consulta(fachada)  # type: ignore[arg-type]
+    ui._render_consulta(fachada)  # ty: ignore[invalid-argument-type]
 
     # Assert
     assert fachada.cedulas == []
