@@ -13,7 +13,7 @@
             "C:\\Users\\maortiz\\AppData\\Roaming\\ai.opencode.desktop\\cli\\2.0.26\\opencode-cli.exe",
             "run",
             "--model",
-            "deepseek/deepseek-flash",
+            "opencode-go/deepseek-v4.1-flash",
             "--agent",
             "build",
             "--auto"
