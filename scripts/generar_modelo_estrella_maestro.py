@@ -123,10 +123,13 @@ def classify_event_column(col_name):
     return None
 
 def main():
-    archivo_entrada = r'C:\Users\maortiz\OneDrive - metrocali.gov.co\Scripts\Proyecto_BD_operadores\Archivos_excel_iniciales\BASE DE DATOS OPERADORESv4.xlsm'
+    base_proj = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    archivo_entrada = os.path.join(
+        base_proj, "scripts", "Archivos_excel_iniciales", "BASE DE DATOS OPERADORESv4.xlsm"
+    )
     
     if not os.path.exists(archivo_entrada):
-        print(f"Error: El archivo {archivo_entrada} no existe en el directorio actual.")
+        print(f"Error: El archivo {archivo_entrada} no existe.")
         return
 
     print("Leyendo el archivo Excel... (Esto tomará un momento)")
@@ -401,9 +404,9 @@ def main():
                         pass
 
     # --- EXPORTAR ---
-    out_dir = "Modelo_Estrella_Final_CSVs"
+    out_dir = os.path.join(base_proj, "data", "Modelo_Estrella_Final_CSVs")
     if not os.path.exists(out_dir):
-        os.makedirs(out_dir)
+        os.makedirs(out_dir, exist_ok=True)
 
     print(f"Exportando tablas a la carpeta '{out_dir}'...")
     dim_vigencia.to_csv(os.path.join(out_dir, 'dim_vigencia_registro.csv'), index=False, encoding='utf-8-sig')

@@ -168,8 +168,9 @@ def to_csv_safe(df, file_path):
         print(f"Archivo guardado como: '{alt_path}'")
 
 def main():
-    base_dir = r'C:\Users\maortiz\OneDrive - metrocali.gov.co\Scripts\Proyecto_BD_operadores\Archivos_excel_iniciales\Comportamiento'
-    out_dir = r'C:\Users\maortiz\OneDrive - metrocali.gov.co\Scripts\Proyecto_BD_operadores\Modelo_Estrella_Final_CSVs'
+    base_proj = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    base_dir = os.path.join(base_proj, "scripts", "Archivos_excel_iniciales", "Comportamiento")
+    out_dir = os.path.join(base_proj, "data", "Modelo_Estrella_Final_CSVs")
     
     if not os.path.exists(out_dir):
         os.makedirs(out_dir, exist_ok=True)

@@ -183,24 +183,72 @@ Centraliza cuentas, credenciales y niveles de acceso:
 
 ---
 
-## 9. Carga Masiva de Datos Iniciales (Scripts de Terminal)
+---
 
-Para inicializaciones masivas o migraciones desde hojas de cálculo institucionales:
+## 9. Clonación del Repositorio e Instalación del Entorno (`uv`)
 
-1. Diligencie las plantillas en `docs/plantillas/`:
-   * `Plantilla_Operadores_Maestra.xlsx`
-   * `Plantilla_Eventos_Operadores.xlsx`
-2. Ejecute los scripts en PowerShell usando `uv`:
-   ```powershell
-   # 1. Modelo estrella de operadores maestros
-   uv run python scripts/generar_modelo_estrella_maestro.py
+Para desplegar la aplicación en un nuevo equipo de trabajo:
 
-   # 2. Modelo estrella de eventos y novedades de comportamiento
-   uv run python scripts/generar_modelo_estrella_comportamiento.py
+### 9.1 Clonación desde GitHub
+Abra su terminal (PowerShell en Windows o Bash) y clone el repositorio oficial en la ubicación deseada:
 
-   # 3. Consolidación a SQLite (operadores.db)
-   uv run python scripts/cargar_excel_a_sqlite.py
-   ```
+```powershell
+# 1. Clonar el repositorio
+git clone https://github.com/certificadooperadores/Certificado_operadores.git
+
+# 2. Entrar a la carpeta raíz del proyecto
+cd Certificado_operadores
+```
+
+### 9.2 Inicialización del Entorno con `uv`
+La plataforma utiliza [`uv`](https://docs.astral.sh/uv/) como gestor moderno de dependencias y entornos virtuales (prohibido `pip` o `requirements.txt` directos):
+
+```powershell
+# 1. Sincronizar el entorno e instalar dependencias automáticamente
+uv sync
+
+# 2. (Opcional para desarrollo) Instalar hooks de validación
+uv run pre-commit install
+```
+
+---
+
+## 10. Inicialización de la Base de Datos por Primera Vez (Script Único)
+
+A diferencia de las plantillas de `docs/plantillas/` (que se utilizan exclusivamente para la **Carga Masiva dentro de la interfaz web** cuando el sistema ya está operando), para **levantar la base de datos desde cero por primera vez** se procesan los libros Excel institucionales originales.
+
+### 10.1 Ubicación de los Archivos Excel Requeridos
+Los archivos fuentes deben estar depositados dentro de la carpeta `scripts/Archivos_excel_iniciales/` en la raíz del proyecto (las rutas son relativas al repositorio, sin rutas fijas absolutas):
+
+1. **Maestro de Operadores:**
+   * Archivo: `scripts/Archivos_excel_iniciales/BASE DE DATOS OPERADORESv4.xlsm`
+2. **Novedades y Comportamientos:**
+   * Carpeta: `scripts/Archivos_excel_iniciales/Comportamiento/`
+   * Archivos requeridos:
+     * `auxiliares_reporte.xlsx` (Catálogos de impacto, comportamiento y jerarquías)
+     * `Gestión del Certificado de Idoneidad del Operador.xlsx`
+     * `Accidentalidad Consolidada.xlsx`
+     * `Consolidado Infracciones Operadores.xlsx`
+     * `Consolidado Quejas Operadores.xlsx`
+
+### 10.2 Ejecución con un Solo Comando
+Desde la raíz del proyecto (`Certificado_operadores`), ejecute un único comando que orquesta los tres pasos de extracción, transformación a modelo estrella y carga consolidada en SQLite:
+
+```powershell
+uv run python scripts/levantar_base_datos_primera_vez.py
+```
+
+**¿Qué hace este script automáticamente?**
+1. **Paso 1:** Procesa el maestro de operadores y genera las dimensiones de personas, códigos, empresas, tipologías y eventos de certificación en `data/Modelo_Estrella_Final_CSVs/`.
+2. **Paso 2:** Procesa los libros de accidentalidad, quejas, infracciones y bitácora generando la tabla `fact_comportamiento.csv` normalizada con más de 300.000 hechos.
+3. **Paso 3:** Crea la base de datos SQLite física (`operadores.db`), crea las tablas de configuración (`dim_usuarios`, logs de auditoría, control de reincidencias) y genera la cuenta inicial de administrador (`admin` / `admin123`).
+
+### 10.3 Iniciar la Aplicación Web
+Una vez finalizado el comando, inicie la plataforma con:
+
+```powershell
+uv run streamlit run src/certificado_operadores/Inicio.py
+```
 
 ---
 
