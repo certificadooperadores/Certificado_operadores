@@ -10,28 +10,28 @@
 
 - [x] **T-01** — Escribir especificación técnica, plan y tareas.
   - Estado: hecho
-- [ ] **T-02** — Actualizar Facade / Repositorio con métodos necesarios.
-  - Criterio de aceptación: La capa de infraestructura soporta los métodos de pqr.
+- [ ] **T-02** — Crear repositorio de reportes (`reportes_repository.py`) para consultas, filtros y exportaciones.
+  - Criterio de aceptación: Filtros y consultas de UTRYT y reportes consolidados aislados en infraestructura.
   - Estado: pendiente
-- [ ] **T-03** — Crear la carpeta `modulos/pqr/` y su archivo `ui.py`.
-  - Criterio de aceptación: Lógica visual extraída, 0% SQL.
+- [ ] **T-03** — Crear el paquete `modulos/reportes/` con `ui.py` y `__init__.py`.
+  - Criterio de aceptación: Función `render_reportes()` creada sin sentencias SQL.
   - Estado: pendiente
-- [ ] **T-04** — Crear página principal en `pages/`.
-  - Criterio de aceptación: Importa `render_page()` desde el nuevo módulo.
+- [ ] **T-04** — Limpiar `pages/3_Reportes.py` eliminando la llamada a `exec`.
+  - Criterio de aceptación: Importa y llama `render_reportes()`; 0 `exec` en la página.
   - Estado: pendiente
-- [ ] **T-05** — Borrar archivo residual de la carpeta heredada `modulos/`.
-  - Criterio de aceptación: `8_PQR.py` eliminado.
+- [ ] **T-05** — Pruebas unitarias en `tests/test_reportes.py`.
+  - Criterio de aceptación: `make test` pasa 100% en verde.
   - Estado: pendiente
 
 ## Progreso
 
 | Tarea | Estado | Commit |
 |-------|--------|--------|
-| T-01  | ✅     | N/A    |
-| T-02  | ⏳     |        |
-| T-03  | ⏳     |        |
-| T-04  | ⏳     |        |
-| T-05  | ⏳     |        |
+| T-01  | hecho  | N/A    |
+| T-02  | pendiente |        |
+| T-03  | pendiente |        |
+| T-04  | pendiente |        |
+| T-05  | pendiente |        |
 
 ---
 
