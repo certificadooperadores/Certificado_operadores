@@ -16,18 +16,18 @@
   - Estado: hecho
 - [x] **T-02** — Redactar el Plan (`002-plan.md`) y Tareas (`002-tareas.md`).
   - Estado: hecho
-- [ ] **T-03** — Crear `domain/models.py`.
+- [x] **T-03** — Crear `domain/models.py`.
   - Criterio de aceptación: DTOs y lógica pura de fechas migrados correctamente. No contiene SQL ni SQLAlchemy.
-  - Estado: en curso (delegado a OpenCode)
-- [ ] **T-04** — Crear `infra/repository.py`.
+  - Estado: hecho
+- [x] **T-04** — Crear `infra/repository.py`.
   - Criterio de aceptación: Consultas SQL y gestión de conexiones SQLAlchemy extraídas y encapsuladas.
-  - Estado: en curso (delegado a OpenCode)
-- [ ] **T-05** — Refactorizar `facade.py`.
+  - Estado: hecho
+- [x] **T-05** — Refactorizar `facade.py`.
   - Criterio de aceptación: La clase Facade importa y usa el Repositorio; desaparecen las sentencias `text()` de este archivo.
-  - Estado: en curso (delegado a OpenCode)
-- [ ] **T-06** — Pasar pruebas unitarias.
+  - Estado: hecho
+- [x] **T-06** — Pasar pruebas unitarias.
   - Criterio de aceptación: El comando `make test` ejecuta y valida los 15 casos sin errores.
-  - Estado: pendiente
+  - Estado: hecho
 
 ## Progreso
 
@@ -35,10 +35,10 @@
 |-------|--------|--------|
 | T-01  | ✅     | N/A    |
 | T-02  | ✅     | N/A    |
-| T-03  | ⏳     |        |
-| T-04  | ⏳     |        |
-| T-05  | ⏳     |        |
-| T-06  | ⏳     |        |
+| T-03  | ✅     | 28a620a|
+| T-04  | ✅     | 28a620a|
+| T-05  | ✅     | 28a620a|
+| T-06  | ✅     | 28a620a|
 
 ---
 
