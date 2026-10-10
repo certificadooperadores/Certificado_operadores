@@ -2,14 +2,13 @@
 
 Página delgada (patrón Facade): delega la pestaña "Operadores" al módulo
 ``admin_operadores``, la pestaña "Gestión de Certificados" al módulo
-``gestion_certificados`` —ambos consumen sus repositorios— y conserva la
-pestaña "Reporte de Comportamientos". Este archivo no ejecuta sentencias de
-base de datos (specs 003 y 008).
+``gestion_certificados`` y la pestaña "Reporte de Comportamientos" al módulo
+``reporte_comportamientos`` —los tres consumen sus repositorios— cerrando la
+Fase 2. Este archivo no ejecuta sentencias de base de datos ni código dinámico
+(specs 003, 008 y 009).
 
 Autor: Ing. Miguel Angel Ortiz Roldan
 """
-
-from pathlib import Path
 
 import streamlit as st
 from utils import mostrar_badge_version
@@ -29,6 +28,7 @@ mostrar_badge_version()
 
 from modulos.admin_operadores import OperadoresFacade, render_page  # noqa: E402
 from modulos.gestion_certificados import render_gestion_certificados  # noqa: E402
+from modulos.reporte_comportamientos import render_reporte_comportamientos  # noqa: E402
 
 t1, t2, t3 = st.tabs(
     ["👨‍✈️ Operadores", "📅 Gestión de Certificados", "📋 Reporte de Comportamientos"]
@@ -38,4 +38,4 @@ with t1:
 with t2:
     render_gestion_certificados()
 with t3:
-    exec(Path("modulos/9_Reporte_Comportamientos.py").read_text(encoding="utf-8"), globals())
+    render_reporte_comportamientos()

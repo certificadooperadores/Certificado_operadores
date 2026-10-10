@@ -28,6 +28,8 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `catalogos` | `src/certificado_operadores/modulos/catalogos/ui.py` | Interfaz Streamlit de catálogos; consume `CatalogosRepository` y no contiene SQL. |
 | `infra.certificados_repository` | `src/certificado_operadores/infra/certificados_repository.py` | Acceso a datos del registro de eventos y certificados: catálogos auxiliares, operador activo y registro con auditoría (SQLAlchemy). |
 | `gestion_certificados` | `src/certificado_operadores/modulos/gestion_certificados/ui.py` | Interfaz Streamlit de gestión de certificados; consume `CertificadosRepository` y no contiene SQL. |
+| `infra.comportamientos_repository` | `src/certificado_operadores/infra/comportamientos_repository.py` | Acceso a datos del reporte de comportamientos: búsqueda de operador, registro individual/masivo y reincidencia con auditoría (SQLAlchemy). |
+| `reporte_comportamientos` | `src/certificado_operadores/modulos/reporte_comportamientos/ui.py` | Interfaz Streamlit del reporte de comportamientos; consume `ComportamientosRepository` y no contiene SQL. |
 
 ## Funciones
 
@@ -485,6 +487,98 @@ redirección a esta interfaz.
   estáticos (paquete CA-01, UI sin SQL RNF-01, repositorio que encapsula la SQL
   CA-03, página sin `exec` con `render_gestion_certificados` CA-02/RNF-02,
   módulo heredado deprecado sin SQL). Patrón AAA.
+
+### Módulo `infra.comportamientos_repository` — `src/certificado_operadores/infra/comportamientos_repository.py`
+
+Repositorio de la capa de infraestructura que encapsula **todo** el acceso a
+datos del reporte de comportamientos (spec 009): búsqueda del operador por cédula
+o código, jerarquías de comportamiento, registro individual y masivo en
+`fact_comportamiento` con auditoría y el cálculo/consulta de la reincidencia
+(`fact_reincidencia`, `reincidencia_detalle` y las acciones en
+`fact_eventos_operador`). Conserva la ventana heredada de reincidencia
+(`MESES_VENTANA_REINCIDENCIA`).
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `ComportamientosRepository.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa el repositorio inyectando el motor. | — |
+| `ComportamientosRepository.motor` | `propiedad -> Engine` | Motor SQLAlchemy (inyectado o resuelto de `db.get_engine`). | `Engine` |
+| `ComportamientosRepository.buscar_operador_por_codigo` | `(codigo: int) -> OperadorComportamientoInfo \| None` | RF-01: operador por código vigente. | `OperadorComportamientoInfo` o `None` |
+| `ComportamientosRepository.buscar_operador_por_cedula` | `(cedula: int) -> OperadorComportamientoInfo \| None` | RF-01: código activo más reciente del operador. | `OperadorComportamientoInfo` o `None` |
+| `ComportamientosRepository.listar_detalles_comportamiento` | `() -> list[DetalleComportamientoInfo]` | RF-01: jerarquías ordenadas por descripción. | `list[DetalleComportamientoInfo]` |
+| `ComportamientosRepository.registrar_comportamiento` | `(datos: DatosComportamiento, usuario: str) -> int` | RF-01: inserta un comportamiento y audita. | `int` |
+| `ComportamientosRepository.resolver_codigo_activo` | `(codigo: int) -> int \| None` | RF-02: valida que el código esté vigente. | `int` o `None` |
+| `ComportamientosRepository.resolver_jerarquia_por_descripcion` | `(descripcion: str) -> int \| None` | RF-02: traduce la descripción a su jerarquía. | `int` o `None` |
+| `ComportamientosRepository.buscar_comportamiento_por_caso` | `(caso: str) -> int \| None` | RF-02: comportamiento existente por caso. | `int` o `None` |
+| `ComportamientosRepository.guardar_comportamientos` | `(filas: Sequence[DatosComportamiento], usuario: str) -> tuple[int, int]` | RF-02: inserta/actualiza en lote y audita. | `(nuevos, actualizados)` |
+| `ComportamientosRepository.listar_impactos` | `() -> list[ImpactoInfo]` | RF-03: impactos con máximo mayor que cero. | `list[ImpactoInfo]` |
+| `ComportamientosRepository.listar_comportamientos_por_impacto` | `(id_impacto: int) -> list[ComportamientoReincidenciaInfo]` | RF-03: comportamientos del impacto. | `list[ComportamientoReincidenciaInfo]` |
+| `ComportamientosRepository.listar_codigos_pendientes` | `(id_comportamiento: int) -> list[int]` | RF-03: códigos con hechos pendientes. | `list[int]` |
+| `ComportamientosRepository.listar_hechos_pendientes` | `(id_comportamiento: int, id_codigo: int) -> list[HechoComportamientoInfo]` | RF-03: hechos pendientes ordenados por fecha. | `list[HechoComportamientoInfo]` |
+| `ComportamientosRepository.listar_pares_reincidencia` | `() -> set[tuple[int, int]]` | RF-03: pares de hechos ya registrados. | `set[tuple[int, int]]` |
+| `ComportamientosRepository.generar_reincidencias` | `() -> int` | RF-03: analiza y crea los casos nuevos. | `int` |
+| `ComportamientosRepository.listar_empresas` | `() -> list[EmpresaInfo]` | RF-03: empresas ordenadas por nombre. | `list[EmpresaInfo]` |
+| `ComportamientosRepository.listar_reincidencias` | `() -> list[ReincidenciaInfo]` | RF-03: casos del más reciente al más antiguo. | `list[ReincidenciaInfo]` |
+| `ComportamientosRepository.listar_detalle_reincidencias` | `() -> list[DetalleReincidenciaInfo]` | RF-03: detalle de hechos de los casos. | `list[DetalleReincidenciaInfo]` |
+| `ComportamientosRepository.obtener_reincidencia_accion` | `(id_reincidencia: int) -> ReincidenciaAccionInfo \| None` | RF-03: código y evento de un caso. | `ReincidenciaAccionInfo` o `None` |
+| `ComportamientosRepository.actualizar_determinacion` | `(id_reincidencia: int, determinacion: str, usuario: str) -> None` | RF-03: fija la determinación y audita. | — |
+| `ComportamientosRepository.registrar_accion_reincidencia` | `(accion: AccionReincidencia, usuario: str) -> int` | RF-03: registra/actualiza la acción en el historial. | `int` |
+| `ComportamientosRepository.importar_acciones_reincidencia` | `(acciones: Sequence[AccionReincidencia], usuario: str) -> tuple[int, int]` | RF-03: importa acciones en lote y audita. | `(insertados, actualizados)` |
+| `ComportamientosRepository.registrar_reincidencia` | `(id_impacto, id_comportamiento, id_codigo, fecha_inicio, fecha_fin, cantidad, resumen, usuario, hechos) -> int` | RF-03: guarda un caso y sus hechos. | `int` |
+
+DTOs: `OperadorComportamientoInfo` (con `nombre_completo()`),
+`DetalleComportamientoInfo`, `DatosComportamiento` (entrada), `ImpactoInfo`,
+`ComportamientoReincidenciaInfo`, `HechoComportamientoInfo`, `EmpresaInfo`,
+`ReincidenciaInfo`, `DetalleReincidenciaInfo`, `ReincidenciaAccionInfo` y
+`AccionReincidencia` (entrada). Constantes: `MESES_VENTANA_REINCIDENCIA`,
+`VENTANA_REINCIDENCIA_SQL`, `NOMBRE_IMPACTO_GRAVE`, `TIPO_EVENTO_CANCELACION` y
+las acciones `ACCION_*`.
+
+### Módulo `reporte_comportamientos` — `src/certificado_operadores/modulos/reporte_comportamientos/ui.py`
+
+Interfaz Streamlit del reporte de comportamientos (spec 009): ingreso individual,
+carga masiva desde Excel y reincidencia. Delega todo el acceso a datos en
+`ComportamientosRepository`; no contiene sentencias SQL (RNF-01) ni conoce el
+esquema. El paquete expone `render_reporte_comportamientos` en
+`src/certificado_operadores/modulos/reporte_comportamientos/__init__.py`.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `parsear_entero` | `(texto: str) -> int \| None` | Convierte el campo de búsqueda en entero. | `int` o `None` |
+| `es_codigo_operacion` | `(texto: str) -> bool` | Indica si el texto es un código (cinco dígitos o menos). | `bool` |
+| `opciones_detalle` | `(detalles: list[DetalleComportamientoInfo]) -> dict[str, str]` | Mapa `{str(id_jerarquia): descripción}`. | `dict` |
+| `texto_celda` | `(valor: object) -> str \| None` | Normaliza una celda de Excel a texto. | `str` o `None` |
+| `entero_celda` | `(valor: object) -> int \| None` | Normaliza una celda de Excel a entero. | `int` o `None` |
+| `fecha_celda` | `(valor: object) -> date \| None` | Normaliza una celda de Excel a fecha. | `date` o `None` |
+| `fecha_texto` | `(valor: object) -> str \| None` | Formatea una celda de fecha como `YYYY-MM-DD`. | `str` o `None` |
+| `construir_plantilla_comportamiento` | `() -> bytes` | Genera el Excel de la plantilla de comportamientos. | `bytes` |
+| `construir_plantilla_acciones` | `() -> bytes` | Genera el Excel de la plantilla de acciones. | `bytes` |
+| `filas_reincidencias` | `(casos: list[ReincidenciaInfo]) -> list[dict[str, object]]` | Mapea los casos a filas legibles. | `list[dict]` |
+| `filas_detalle_reincidencias` | `(detalles: list[DetalleReincidenciaInfo]) -> list[dict[str, object]]` | Mapea el detalle a filas legibles. | `list[dict]` |
+| `render_reporte_comportamientos` | `(repositorio: ComportamientosRepository \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
+
+Constantes: `TITULO`, `USUARIO_POR_DEFECTO`, `NOMBRE_ARCHIVO_PLANTILLA`,
+`NOMBRE_ARCHIVO_PLANTILLA_ACCIONES`, `TIPO_MIME_EXCEL`, `HOJA_INSTRUCCIONES`,
+`HOJA_DATOS`, `OPCIONES_DETERMINACION`, `TIPO_EVENTO_POR_DETERMINACION`,
+`TIPO_EVENTO_POR_ACCION`, `COLUMNAS_PLANTILLA_COMPORTAMIENTO`,
+`INSTRUCCIONES_COMPORTAMIENTO`, `COLUMNAS_PLANTILLA_ACCIONES` e
+`INSTRUCCIONES_ACCIONES`. Punto de entrada:
+`src/certificado_operadores/pages/2_Administracion_Operadores.py` (importa
+`render_reporte_comportamientos` y lo invoca en la pestaña 3; la página queda
+100% libre de `exec`, cerrando la Fase 2).
+
+### Módulo `reporte_comportamientos` — pruebas
+
+- **Ubicación:** `tests/test_reporte_comportamientos.py`
+- **Cobertura:** repositorio contra SQLite temporal (búsqueda de operador por
+  código/cédula incluyendo inactivos, detalles, registro individual y masivo con
+  auditoría, resolución de código/jerarquía/caso, evaluación de reincidencia
+  grave y por pares, ventana temporal, listados y detalle, determinación, acción
+  e importación de acciones); funciones puras de la UI (`parsear_entero`,
+  `es_codigo_operacion`, `opciones_detalle`, `texto_celda`, `entero_celda`,
+  `fecha_celda`, `fecha_texto`, plantillas Excel y `filas_reincidencias`); y
+  criterios estáticos (paquete CA-01, UI sin SQL RNF-01, repositorio que
+  encapsula la SQL CA-03, página sin `exec` con `render_reporte_comportamientos`
+  CA-02/RNF-02). Patrón AAA.
 
 ## Detalle
 
