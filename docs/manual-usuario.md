@@ -190,37 +190,49 @@ Centraliza cuentas, credenciales y niveles de acceso:
 
 ## 9. Clonación del Repositorio e Instalación del Entorno (`uv`)
 
-Para desplegar la aplicación en un nuevo equipo de trabajo:
+Para desplegar la aplicación en su estación de trabajo:
 
 ### 9.1 Clonación desde GitHub
-Abra su terminal (PowerShell en Windows o Bash) y clone el repositorio oficial en la ubicación deseada:
+Abra su terminal (PowerShell en Windows o Bash) y clone el repositorio oficial en la ubicación de su preferencia:
 
 ```powershell
-# 1. Clonar el repositorio
 git clone https://github.com/certificadooperadores/Certificado_operadores.git
-
-# 2. Entrar a la carpeta raíz del proyecto
 cd Certificado_operadores
 ```
 
 ### 9.2 Inicialización del Entorno con `uv`
-La plataforma utiliza [`uv`](https://docs.astral.sh/uv/) como gestor moderno de dependencias y entornos virtuales (prohibido `pip` o `requirements.txt` directos):
+La plataforma utiliza [`uv`](https://docs.astral.sh/uv/) como gestor moderno de dependencias y entornos virtuales (sin necesidad de configurar Python ni entornos manualmente):
 
 ```powershell
-# 1. Sincronizar el entorno e instalar dependencias automáticamente
 uv sync
-
-# 2. (Opcional para desarrollo) Instalar hooks de validación
-uv run pre-commit install
 ```
 
 ---
 
-## 10. Inicialización de la Base de Datos por Primera Vez (Script Único)
+## 10. Trabajo Colaborativo Multi-PC mediante OneDrive
+
+Para que la base de datos y la plataforma puedan ser trabajadas desde varios equipos o por diferentes integrantes del equipo sin perder el trabajo:
+
+### 10.1 Clonar en una Carpeta Sincronizada de OneDrive
+Se recomienda clonar o ubicar la carpeta del repositorio dentro de su espacio institucional de **OneDrive** (por ejemplo: `...\OneDrive - metrocali.gov.co\...\Certificado_operadores`).
+
+* **Sincronización Automática:** El archivo de base de datos (`operadores.db`), las configuraciones y los respaldos se sincronizan automáticamente en la nube institucional.
+* **Conexión desde Otro PC:** Si clona o accede al proyecto desde otro computador con su cuenta de OneDrive, el sistema conectará de inmediato con la misma base de datos `operadores.db` actualizada, permitiéndole continuar las labores sin perder registros ni configuraciones.
+
+### 10.2 Concurrencia y Buenas Prácticas (Trabajo por Turnos)
+Dado que SQLite es una base de datos basada en un único archivo físico (`operadores.db`):
+* **Lectura y Consulta Simultánea:** Múltiples computadores pueden tener la aplicación abierta simultáneamente para consultar operadores, revisar reportes, exportar a Excel y analizar gráficos.
+* **Escritura y Modificación (Trabajo por Turnos):** Para registrar novedades masivas, evaluar reincidencias, restaurar copias de seguridad o editar registros maestros, **se recomienda coordinar el trabajo por turnos de edición**.
+* **¿Por qué?** Si dos personas guardan cambios simultáneos en el mismo segundo desde dos computadores desconectados de la red, OneDrive generará una copia de conflicto (`operadores - copia de conflicto.db`). Trabajar en turnos de registro activo o esperar a que el icono de OneDrive indique *"Sincronizado"* garantiza integridad total y cero discrepancias.
+* **Uso del Botón Refrescar:** Antes de iniciar una sesión de trabajo en cualquier equipo, presione el botón **🔄 Refrescar Datos** en la barra lateral para asegurar que Streamlit tome los últimos cambios sincronizados desde la nube.
+
+---
+
+## 11. Inicialización de la Base de Datos por Primera Vez (Script Único)
 
 Para **levantar la base de datos desde cero por primera vez**, se procesan los libros Excel institucionales originales.
 
-### 10.1 Ubicación de los Archivos Excel Requeridos
+### 11.1 Ubicación de los Archivos Excel Requeridos
 Los archivos fuentes deben estar depositados dentro de la carpeta `scripts/Archivos_excel_iniciales/` en la raíz del proyecto (las rutas son relativas al repositorio, sin rutas fijas absolutas):
 
 1. **Maestro de Operadores:**
@@ -234,14 +246,10 @@ Los archivos fuentes deben estar depositados dentro de la carpeta `scripts/Archi
      * `Consolidado Infracciones Operadores.xlsx`
      * `Consolidado Quejas Operadores.xlsx`
 
-### 10.2 Ejecución con un Solo Comando
-Abra la terminal en la raíz del proyecto (`Certificado_operadores`) y ejecute:
+### 11.2 Ejecución con un Solo Comando
+Abra la terminal ubicada en la raíz del repositorio y ejecute el proceso unificado:
 
 ```powershell
-# Asegúrese de estar ubicado en la raíz del proyecto:
-cd "C:\ruta\hacia\Certificado_operadores"
-
-# Ejecutar el proceso unificado
 uv run python scripts/levantar_base_datos_primera_vez.py
 ```
 
@@ -252,18 +260,18 @@ uv run python scripts/levantar_base_datos_primera_vez.py
 
 ---
 
-## 11. Ejecución e Inicio de la Aplicación
+## 12. Ejecución e Inicio de la Aplicación
 
-Para iniciar la plataforma web dispone de dos alternativas:
+Para iniciar la plataforma web dispone de dos alternativas cómodas:
 
 ### Opción A — Ejecutable directo de Windows (Recomendada)
-Haga doble clic en el archivo [ejecutar_app.bat](file:///c:/Users/maortiz/OneDrive%20-%20metrocali.gov.co/App/Certificado_operadores/ejecutar_app.bat) ubicado en la raíz del repositorio. Este archivo se sitúa automáticamente en el directorio correcto y lanza Streamlit de forma directa.
+Haga doble clic en el archivo [ejecutar_app.bat](file:///c:/Users/maortiz/OneDrive%20-%20metrocali.gov.co/App/Certificado_operadores/ejecutar_app.bat) ubicado en la raíz del repositorio donde clonó el proyecto (`[Ruta_donde_clono]/Certificado_operadores/ejecutar_app.bat`).
+* Este archivo detecta automáticamente su propia ubicación en el disco o en OneDrive, verifica el entorno y lanza Streamlit de inmediato sin requerir configuración manual de comandos.
 
 ### Opción B — Desde Terminal PowerShell
-Abra PowerShell, ubíquese en la raíz del proyecto con `cd` y lance el comando:
+Desde la terminal en la raíz de su repositorio clonado, ejecute:
 
 ```powershell
-cd "C:\ruta\hacia\Certificado_operadores"
 uv run streamlit run src/certificado_operadores/Inicio.py
 ```
 
