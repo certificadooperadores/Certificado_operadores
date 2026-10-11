@@ -25,6 +25,9 @@ coverage.xml
 
 # Artefactos pesados / datos (almacenados externamente en SharePoint)
 data/
+scripts/Archivos_excel_iniciales/
+*.xlsx
+*.xlsm
 artifacts/
 *.h5
 *.pt

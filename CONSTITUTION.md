@@ -27,21 +27,32 @@
 
 ### Propósito
 
-<!-- Una o dos frases: qué problema resuelve el proyecto y para quién. -->
+Centralizar, versionar y custodiar la información de idoneidad, eventos normativos, control de novedades disciplinarias (accidentalidad, quejas e infracciones) y trazabilidad del ciclo de vida de los operadores del sistema integrado de transporte masivo MIO para Metrocali S.A. (Dirección de Operación - Evaluación de la Operación), sustituyendo hojas de cálculo aisladas por una plataforma con reglas de negocio auditables, evaluación automatizada de reincidencias y analítica interactiva confiable.
 
 ### No-propósito
 
-<!-- Qué NO es este proyecto. Evita expectativas equivocadas y desvíos de alcance. -->
+- **No es un sistema de nómina ni gestión de recursos humanos:** no gestiona salarios, prestaciones ni contratos laborales individuales.
+- **No es un sistema de despacho o telemetría en tiempo real:** no monitorea la ubicación GPS de los buses en vivo ni sustituye a los sistemas de ayuda a la explotación (SAE/TMS).
+- **No es un sistema transaccional bancario ni de recaudo:** no gestiona ventas de pasajes ni tarifas del usuario final.
+- **No almacena datos personales sensibles en repositorios públicos:** la base de datos física, respaldos y libros Excel institucionales con cédulas o datos de personas jamás se suben a Git ni se comparten fuera de la red autorizada.
 
 ## 2. Alcance
 
 ### Dentro del alcance
 
-- ...
+- **Administración del Ciclo de Vida del Operador:** Registro, actualización, asignación de rangos numéricos por concesionario (patrón COT: 10000 Git, 20000 ByN, 30000 ETM, 40000 Unimetro), control de tipologías y verificación de no duplicidad de cédula activa.
+- **Gestión Normativa de Certificados de Idoneidad:** Control de vigencia de 3 años, cálculo automático de estados (Vigente, Próximo a Vencer a 90 días, Vencido, Cancelado) y registro de eventos oficiales (Certificación, Reactivación, Renovación, Suspensión, Retiro).
+- **Novedades y Comportamientos Operacionales:** Ingreso individual y carga masiva de eventos de bitácora, consolidación de fuentes (accidentalidad, quejas, infracciones), evaluación matemática de reincidencias y trazabilidad de determinaciones institucionales.
+- **Analítica Visual y Reportes:** Dashboard interactivo con Altair (cross-filtering coordinado tridireccional entre operadores, causales y rutas), cronograma de vencimientos por quincenas y exportación oficial a Excel/CSV.
+- **Seguridad y Control de Acceso (RBAC):** Cuentas con roles jerárquicos (Super Administrador, Administrador, Gestor), contraseñas con hash irreversible `bcrypt`, tokens firmados (`HMAC-SHA256`) y auditoría transaccional estricta en `log_auditoria`.
+- **Gobernanza de Datos:** Copias de seguridad versionadas (`.db`), protección contra sobrescritura (`.protegido.db`), comparación preventiva de registros y optimización SQLite en modo WAL con índices estratégicos.
 
 ### Fuera del alcance (por ahora)
 
-- ...
+- Integración directa por API con el RUNT o bases de datos externas del Ministerio de Transporte.
+- Portal público de autogestión para consulta de certificados por parte de los conductores o ciudadanos.
+- Notificaciones automáticas por correo electrónico o mensajería SMS a los concesionarios (se gestiona vía exportación de reportes).
+- Motor de base de datos cliente-servidor distribuido (PostgreSQL en la nube): actualmente opera sobre SQLite optimizado con sincronización colaborativa vía OneDrive institucional.
 
 ## 3. Stack técnico
 

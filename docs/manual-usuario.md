@@ -48,21 +48,97 @@ Dado que SQLite es una base de datos basada en un único archivo físico (`opera
 
 Para **levantar la base de datos desde cero por primera vez**, se procesan los libros Excel institucionales originales.
 
-### 3.1 Ubicación de los Archivos Excel Requeridos
-Los archivos fuentes deben estar depositados dentro de la carpeta `scripts/Archivos_excel_iniciales/` en la raíz del proyecto (las rutas son relativas al repositorio, sin rutas fijas absolutas):
+### 3.1 Política de Privacidad de Datos y Exclusión del Repositorio
+> 🔒 **Directriz de Seguridad de la Información:**
+> Por estricto cumplimiento del principio de seguridad, privacidad y protección de datos personales (cédulas, nombres e historiales de operadores), **los archivos Excel institucionales jamás se suben ni se versionan en Git/GitHub**.
+> 
+> La carpeta `scripts/Archivos_excel_iniciales/` y todas las extensiones `*.xlsx` y `*.xlsm` se encuentran permanentemente ignoradas en el `.gitignore`. El usuario responsable del despliegue debe copiar manualmente sus copias institucionales en dicha carpeta para procesarlas localmente.
 
-1. **Maestro de Operadores:**
-   * Archivo: `scripts/Archivos_excel_iniciales/BASE DE DATOS OPERADORESv4.xlsm`
-2. **Novedades y Comportamientos:**
-   * Carpeta: `scripts/Archivos_excel_iniciales/Comportamiento/`
-   * Archivos requeridos:
-     * `auxiliares_reporte.xlsx` (Catálogos de impacto, comportamiento y jerarquías)
-     * `Gestión del Certificado de Idoneidad del Operador.xlsx`
-     * `Accidentalidad Consolidada.xlsx`
-     * `Consolidado Infracciones Operadores.xlsx`
-     * `Consolidado Quejas Operadores.xlsx`
+### 3.2 Ubicación, Nombres de Archivo y Columnas Obligatorias
 
-### 3.2 Ejecución con un Solo Comando
+Para procesar el modelo de datos inicial, el usuario debe depositar los siguientes archivos en `scripts/Archivos_excel_iniciales/` respetando sus estructuras mínimas:
+
+#### 1. Archivo Maestro de Operadores
+* **Ruta y Nombre exacto:** `scripts/Archivos_excel_iniciales/BASE DE DATOS OPERADORESv4.xlsm`
+* **Columnas Obligatorias (Cabeceras requeridas):**
+  * `CODIGO` o `CÓDIGO`: Código numérico institucional del operador (ej. `11016`, `22045`).
+  * `EMPRESA`: Nombre del concesionario (`GIT Masivo`, `Blanco y Negro Masivo`, `ETM`, `Unimetro`).
+  * `CEDULA` o `DOCUMENTO`: Número de documento de identidad del conductor.
+  * `NOMBRES`: Nombres del operador.
+  * `APELLIDO 1` / `PRIMER APELLIDO`: Primer apellido.
+  * `APELLIDO 2` / `SEGUNDO APELLIDO`: Segundo apellido.
+  * `GENERO`: Género del operador (`M` / `F`).
+  * `TIPOLOGIA` o `TIPOLOGÍA`: Tipología autorizada (`1` = Articulado, `2` = Padrón, `3` = Complementario, `4` = Auxiliar).
+  * `LICENCIA C1/C2/C3` (o columnas que contengan `LICENCIA`): Categoría y vigencia de la licencia de conducción.
+  * Columnas de eventos normativos de certificación con sufijos de fecha y vehículo:
+    * Columnas que contengan `CERTIFICADOS DE IDONEIDAD RECIBIDOS` (`COMPLEMENTARIO`, `PADRON`, `ARTICULADO`, `RENOVACION`, `REACTIVACION`).
+    * Columnas que contengan `PRUEBAS` (`COMPLEMENTARIO`, `PADRON`, `ARTICULADO`).
+    * Columnas de modificaciones y suspensiones (`MODIFICACIONES AL CERTIFICADO`).
+
+---
+
+#### 2. Carpeta de Novedades y Comportamientos
+* **Ruta de la carpeta:** `scripts/Archivos_excel_iniciales/Comportamiento/`
+* **Archivos Requeridos y sus Columnas Obligatorias:**
+
+##### A. `auxiliares_reporte.xlsx` (Catálogo maestro de jerarquías y comportamientos)
+Debe contener obligatoriamente 3 hojas de cálculo (*sheets*):
+* **Hoja `dim_impacto`:**
+  * `id_impacto`: Identificador entero (`1` = Leve, `2` = Moderado, `3` = Grave, etc.).
+  * `nombre_impacto` / `impacto`: Denominación del impacto.
+* **Hoja `dim_comportamiento`:**
+  * `id_comportamiento`: Identificador numérico del tipo de comportamiento.
+  * `nombre_comportamiento`: Categoría macro (`Accidentalidad`, `Infracciones`, `Quejas`, `Bitácora`).
+* **Hoja `dim_detalle_comportamiento`:**
+  * `id_jerarquia`: Clave primaria de jerarquía.
+  * `id_comportamiento` (o `id_impacto`): Vínculo con el comportamiento padre.
+  * `descripcion_detalle` (o columna que contenga `descrip`): Texto descriptivo del detalle/causal.
+  * `fuente`: Nombre de la fuente generadora.
+
+##### B. `Gestión del Certificado de Idoneidad del Operador.xlsx` (Libro de bitácora general)
+* Hoja que contenga en su nombre `2014` o `hoy`.
+* **Columnas Obligatorias:**
+  * `Código Operador` o `Codigo Operador`: Código del operador.
+  * `Fecha Bitácora` o `Fecha Bitacora`: Fecha en formato fecha o texto reconocible (`DD/MM/AAAA` o `AAAA-MM-DD`).
+  * `Jerarquía` o `Jerarquia`: Causal o descripción del hecho (debe coincidir o cruzar con el catálogo de auxiliares).
+  * `No Caso` o `No. Caso`: Número de caso o ticket institucional.
+  * `Vehículo` o `Vehiculo`: Identificador del móvil/bus.
+  * `Viaje`, `Tarea`, `Ruta`: Datos operacionales del servicio.
+  * `Hora Evento`: Hora de ocurrencia (`HH:MM:SS` o fracción horaria Excel).
+  * `Nota` o `Descripción o Nota`: Resumen o relato del suceso.
+  * `Observación Concesionario` y `Respuesta Metrocali`.
+
+##### C. `Accidentalidad Consolidada.xlsx` (Registro de colisiones e incidentes de tránsito)
+* Hoja con nombre que incluya `accidentalidad`.
+* **Columnas Obligatorias:**
+  * `Código Operador` o `Codigo Operador`: Código del conductor involucrado.
+  * `Fecha Bitácora` o `FECHA`: Fecha del accidente.
+  * `Jerarquía` o `Jerarquia`: Tipificación del choque o evento.
+  * `Vehículo` o `MC`: Número del móvil Metrocali.
+  * `Ruta`, `Sitio Salida`, `Sitio Novedad`: Ubicación del suceso.
+  * `Lesionados` o `Número Lesionados`: Cantidad de lesionados en el hecho.
+
+##### D. `Consolidado Infracciones Operadores.xlsx` (Comparendos y faltas de tránsito)
+* Hoja con nombre que incluya `infracciones` o `consolidado`.
+* **Columnas Obligatorias:**
+  * `CÉDULA` o `DOCUMENTO` (o `CÓDIGO`): Documento del operador para cruce con la persona.
+  * `FECHA`: Fecha de la imposición de la falta.
+  * `DIRECCIÓN` o `DIRECCION`: Lugar del hecho.
+  * `Jerarquía` o `DESCRIPCIÓN`: Infracción cometida.
+  * `PLACA`: Placa del vehículo.
+
+##### E. `Consolidado Quejas Operadores.xlsx` (PQRS y reclamos ciudadanos)
+* Hoja con nombre que incluya `quejas` o `pqrs`.
+* **Columnas Obligatorias:**
+  * `CÓDIGO` o `Código Operador`: Código del conductor reportado.
+  * `FECHA`: Fecha del reporte ciudadano.
+  * `Jerarquía` o `Jerarquia`: Motivo de la queja (ej. *no arrime a plataforma*, *frenado brusco*).
+  * `Vehículo`: Móvil asignado al servicio.
+  * `Ruta`: Ruta de la queja.
+
+---
+
+### 3.3 Ejecución con un Solo Comando
 Abra la terminal ubicada en la raíz del repositorio y ejecute el proceso unificado:
 
 ```powershell
