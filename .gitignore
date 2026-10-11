@@ -33,6 +33,8 @@ artifacts/
 *.safetensors
 *.sqlite
 *.db
+*.db-wal
+*.db-shm
 
 # Código temporal del agente (nunca versionar)
 temp_agent/
