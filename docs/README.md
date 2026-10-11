@@ -18,13 +18,14 @@ Documentos raíz relacionados:
 - [`../CONTRIBUTING.md`](../CONTRIBUTING.md) — guía de contribución.
 
 ## Estado de la documentación
-
-- [ ] `requerimientos.md` completa.
-- [ ] `desacople.md` con diagrama actualizado.
-- [ ] `manual-usuario.md` cubre todos los elementos de la interfaz.
-- [ ] `referencia-funciones.md` lista todas las funciones.
-- [ ] `specs/` tiene las especificaciones vigentes.
+ 
+- [x] `requerimientos.md` completa (requisitos de software, hardware, RF y RNF).
+- [x] `desacople.md` con arquitectura por capas, Facade y mitigaciones.
+- [x] `manual-usuario.md` cubre todos los módulos, roles RBAC, OneDrive multi-PC y scripts.
+- [x] `referencia-funciones.md` lista todas las funciones del proyecto con sus firmas.
+- [x] `specs/` tiene las especificaciones vigentes de cada iteración (SDD).
 
 ---
 
-**Autor:** Ing. Miguel Angel Ortiz Roldan
+**Autor:** Ing. Miguel Angel Ortiz Roldan  
+**Institución:** Metrocali S.A. — Dirección de Operación - Evaluación de la Operación
