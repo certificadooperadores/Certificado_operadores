@@ -44,7 +44,7 @@ Sistema web desarrollado sobre Streamlit y SQLite para centralizar y versionar l
 | Gobernanza y Constitución | ✅ | [`CONSTITUTION.md`](./CONSTITUTION.md) actualizado |
 | Arquitectura desacoplada (Facade) | ✅ | Cero consultas SQL o lógica en UI |
 | Módulos operativos y analítica visual | ✅ | Altair cross-filtering, KPIs institucionales |
-| Suite de pruebas automatizadas | ✅ | **388 pruebas en verde** (`388 passed`) |
+| Suite de pruebas automatizadas | ✅ | **373 funciones de prueba — 402 casos en verde** (vía parametrización) |
 
 ---
 
@@ -82,6 +82,10 @@ graph TD
     subgraph Fachadas ["2. Capa de Aplicación (Fachadas / Casos de Uso)"]
         Facade_Op["OperadoresFacade"]
         Facade_User["UsuariosFacade"]
+        Facade_Cert["CertificadosFacade"]
+        Facade_Comp["ComportamientosFacade"]
+        Facade_Rep["ReportesFacade"]
+        Facade_Conf["ConfiguracionFacade"]
         Service_Backup["BackupService"]
     end
 
@@ -211,7 +215,7 @@ uv run streamlit run src/certificado_operadores/Inicio.py
 | `make dev` | `uv sync` + instalación de hooks de pre-commit. |
 | `make check` | Verificación completa (lint + formato + pruebas). |
 | `make lint` / `make format` | Ruff (análisis y formato de código). |
-| `make test` | Pytest (ejecuta las 388 pruebas unitarias). |
+| `make test` | Pytest (ejecuta las 373 funciones de prueba; 402 casos con parametrización). |
 
 ---
 
@@ -226,6 +230,10 @@ Certificado_operadores/
 │   ├── pages/                   # Páginas multipágina de Streamlit
 │   ├── facade.py                # Fachada principal de operaciones
 │   ├── facade_usuarios.py       # Fachada de control de acceso y RBAC
+│   ├── facade_certificados.py   # Fachada de certificados y alertas
+│   ├── facade_comportamientos.py # Fachada de comportamientos y reincidencias
+│   ├── facade_reportes.py       # Fachada de reportes y exportaciones
+│   ├── facade_configuracion.py  # Fachada de catálogos y corrección de registros
 │   ├── estilos.py               # Tema y tokens visuales Metrocali
 │   └── Inicio.py                # Entrada principal y pantalla de Login
 ├── tests/                       # Suite automatizada de pruebas (pytest)

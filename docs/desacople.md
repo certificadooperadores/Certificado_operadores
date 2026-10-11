@@ -5,26 +5,23 @@ partes, para poder cambiarlas sin romper el resto.
 
 ## 1. Visión general
 
-<!-- Diagrama de contexto. Puede ser ASCII, Mermaid o un enlace a un diagrama
-     generado con la skill `archify` (HTML interactivo). -->
-
 ```text
-[ Entrada / UI ] → [ Casos de uso ] → [ Dominio ] → [ Infraestructura ]
+[ Entrada / UI ] → [ Fachadas / Casos de uso ] → [ Dominio ] → [ Infraestructura ]
 ```
 
 ## 2. Capas y responsabilidades
 
 | Capa / módulo | Responsabilidad única | Puede depender de |
 |---------------|-----------------------|-------------------|
-| Presentación / UI | Mostrar y capturar datos. | Casos de uso |
-| Casos de uso / aplicación | Orquestar flujos. | Dominio |
-| Dominio | Reglas de negocio. | Nada externo |
-| Infraestructura | Persistencia, APIs, IO. | Dominio (implementa sus puertos) |
+| Presentación / UI (`modulos/*/ui.py`, `pages/`, `Inicio.py`) | Mostrar y capturar datos. | Fachadas |
+| Casos de uso / aplicación (`facade*.py`) | Orquestar flujos. | Dominio e Infraestructura |
+| Dominio (`domain/`) | Reglas de negocio. | Nada externo |
+| Infraestructura (`infra/`) | Persistencia, APIs, IO. | Dominio (implementa sus puertos) |
 
 ## 3. Dirección de dependencias (reglas duras)
 
 - El **dominio no depende** de frameworks, base de datos ni UI.
-- La **UI no accede** directamente a la base de datos.
+- La **UI no accede** directamente a la base de datos ni importa repositorios.
 - Las dependencias se **inyectan**, no se instancian dentro de la lógica.
 - Los contratos entre capas son **interfaces / DTOs**, no tipos concretos de una
   tecnología.
@@ -36,43 +33,63 @@ partes, para poder cambiarlas sin romper el resto.
 
 - La interfaz (incluida **Streamlit**) **no** contiene lógica de negocio ni ejecuta
   tareas; solo captura entrada, llama a la **fachada** y muestra el resultado.
-- El **Facade** expone los casos de uso y orquesta dominio + infraestructura.
+- Cada **fachada** expone los casos de uso de su dominio y orquesta dominio +
+  infraestructura; es la **única** puerta que la UI conoce.
 
 ```text
-UI / Streamlit  →  Facade (casos de uso)  →  Dominio  →  Infraestructura
+UI / Streamlit  →  Fachada (casos de uso)  →  Dominio  →  Infraestructura
 ```
+
+### Mapa de fachadas especializadas (spec 025)
+
+| Fachada | Archivo | Encapsula | Casos de uso que expone |
+|---------|---------|-----------|-------------------------|
+| `OperadoresFacade` | `facade.py` | `OperadoresRepository` | Consulta de operadores, guardado, validación de certificado y estadísticas. |
+| `UsuariosFacade` | `facade_usuarios.py` | `UsuariosRepository` | Autenticación, RBAC, alta/modificación de usuarios y tokens de sesión. |
+| `CertificadosFacade` | `facade_certificados.py` | `CertificadosRepository` + `OperadoresRepository` | Catálogos de eventos, operador activo, registro individual/masivo y alertas del certificado. |
+| `ComportamientosFacade` | `facade_comportamientos.py` | `ComportamientosRepository` | Registro individual/masivo, evaluación de reincidencia y acciones de Metrocali. |
+| `ReportesFacade` | `facade_reportes.py` | `ReportesRepository` | Métricas analíticas, filtros tridireccionales, vencimientos y exportaciones. |
+| `ConfiguracionFacade` | `facade_configuracion.py` | `CatalogosRepository` + `EventosRepository` | Catálogos maestros y corrección segura de registros. |
+| `BackupService` | `infra/backup_service.py` | Sistema de archivos / SQLite | Copias, protección, comparación, restauración y **estado de versión** de la base. |
+
+> Regla verificable: **ningún** `modulos/*/ui.py` importa una clase `*Repository`.
 
 ## 4. Contratos entre módulos
 
 | Contrato | Define | Implementa |
 |----------|--------|------------|
-| DTOs y Modelos | `domain/models.py`, `domain/usuarios.py` | N/A (Dataclasses inmutables) |
-| Repositorio Base | `domain/` (Implícitamente) | `infra/repository.py`, `infra/usuarios_repository.py` (SQLAlchemy) |
-| Casos de Uso | `facade.py`, `facade_usuarios.py` | `OperadoresFacade`, `UsuariosFacade` |
+| DTOs y modelos | `domain/models.py`, `domain/usuarios.py` | N/A (dataclasses inmutables) |
+| Repositorios | Infraestructura (`infra/`) | `OperadoresRepository`, `UsuariosRepository`, `CertificadosRepository`, `ComportamientosRepository`, `ReportesRepository`, `CatalogosRepository`, `EventosRepository` (SQLAlchemy) |
+| Casos de uso | `facade*.py` | `OperadoresFacade`, `UsuariosFacade`, `CertificadosFacade`, `ComportamientosFacade`, `ReportesFacade`, `ConfiguracionFacade` |
+| Servicio de respaldos | `infra/backup_service.py` | `BackupService` |
 
 ## 5. Puntos de acoplamiento y su mitigación
 
 | Acoplamiento | Riesgo | Mitigación |
 |--------------|--------|------------|
-| UI -> Base de Datos | Consultas SQL rotas por cambios en UI | **Mitigado**: La UI (Streamlit) solo invoca métodos de `OperadoresFacade`. |
-| UI (usuarios) -> Base de Datos | Consultas SQL rotas por cambios en UI | **Mitigado**: `modulos/gestion_usuarios/ui.py` solo invoca `UsuariosFacade` (spec 004). |
-| UI (backups) -> Sistema de archivos/BD | Operaciones de SO y SQL dispersas en la vista | **Mitigado**: `modulos/administrar_backups/ui.py` solo invoca `BackupService`; el manejo de archivos y la copia SQLite viven en `infra/backup_service.py` (spec 005). |
-| UI (corrección) -> Base de Datos | Consultas SQL y mutaciones crudas inlined en la vista | **Mitigado**: `modulos/correccion_registros/ui.py` solo invoca `EventosRepository`; la lógica inlined y duplicada de `3_Modificacion_Tablas.py` fue erradicada (spec 006). |
-| UI (catálogos) -> Base de Datos | Más de 20 consultas SQL crudas mezcladas con la vista de catálogos | **Mitigado**: `modulos/catalogos/ui.py` solo invoca `CatalogosRepository`; se eliminó el último `exec` de `pages/1_Configuracion.py` (spec 007). |
-| UI (certificados) -> Base de Datos | Más de 15 consultas SQL y transacciones crudas en la vista de eventos | **Mitigado**: `modulos/gestion_certificados/ui.py` solo invoca `CertificadosRepository`; se eliminó el `exec` de la pestaña 2 de `pages/2_Administracion_Operadores.py` y el módulo heredado `6_Gestion_Certificados.py` quedó deprecado (spec 008). |
-| Facade -> Infra | Facade atado a SQLAlchemy | **Mitigado**: Facade delega todo acceso a datos a `OperadoresRepository`. |
-| Tipado Dinámico | Errores de acceso a diccionarios en UI | **Mitigado**: Uso estricto de `dataclasses` (`OperadorInfo`) en la capa de Dominio. |
+| UI → Base de datos | Consultas SQL rotas por cambios de UI | **Mitigado:** la UI solo invoca las fachadas especializadas (specs 003–010 y 025). |
+| UI → Repositorios | Conocer clases concretas de infraestructura | **Mitigado:** `CertificadosFacade`, `ComportamientosFacade`, `ReportesFacade` y `ConfiguracionFacade` encapsulan los repositorios; cero importaciones de `*Repository` en `modulos/*/ui.py`. |
+| UI (backups) → Sistema de archivos/BD | Operaciones de SO y SQL dispersas | **Mitigado:** `modulos/administrar_backups/ui.py` y `utils.py` solo invocan `BackupService` (spec 005 y 025). |
+| UI (sesión) → Criptografía | Tokens y hashing en la vista | **Mitigado:** `ui_sesion.py` delega en `UsuariosFacade`; el hashing/token viven en `infra/seguridad.py`. |
+| Fachada → Infra | Fachada atada a SQLAlchemy | **Mitigado:** cada fachada delega todo acceso a datos en su repositorio. |
+| Motor SQLite | Bloqueos y consultas lentas | **Mitigado (spec 025):** pragmas `journal_mode=WAL`, `busy_timeout=5000`, `synchronous=NORMAL` e índices estratégicos explícitos. |
+| Tipado dinámico | Errores de acceso a diccionarios en UI | **Mitigado:** uso estricto de dataclasses en el dominio y en cada repositorio. |
 
 ## 6. Decisiones de arquitectura
 
-1. **Clean Architecture Ligera:** Se separó la lógica en capas de Dominio (`domain/models.py`), Infraestructura (`infra/repository.py`) y Aplicación (`facade.py`).
-2. **Inyección de Dependencias:** El motor de base de datos se inyecta desde arriba (o perezosamente) para facilitar las pruebas unitarias con SQLite en memoria.
-3. **Patrón Facade:** Las vistas de Streamlit (`views/`) ignoran completamente la existencia de tablas, columnas o consultas SQL; todo pasa por `OperadoresFacade`.
-4. **Facade de usuarios (spec 004):** La gestión de usuarios se extrajo a `modulos/gestion_usuarios/ui.py` y consume `UsuariosFacade`; la página `pages/1_Configuracion.py` dejó de usar `exec` en esa pestaña. El hashing de contraseñas se aísla en `infra/seguridad.py` (bcrypt).
-5. **Servicio de backups (spec 005):** La administración de respaldos se extrajo a `modulos/administrar_backups/ui.py`, que consume `infra/backup_service.py`; la página `pages/1_Configuracion.py` dejó de usar `exec` en la pestaña de backups. La copia se hace con la API de respaldo de `sqlite3` (consistente), con directorio configurable (`BACKUPS_DIR`, por defecto `backups/`) y sin rutas absolutas como el heredado `/Backups`.
-6. **Repositorio de eventos y corrección (spec 006):** La corrección de registros individuales y lotes se extrajo a `modulos/correccion_registros/ui.py`, delegando en `infra/eventos_repository.py`. Se eliminaron más de 140 líneas inlined de SQL en `pages/1_Configuracion.py` y se reemplazó el archivo heredado duplicado `3_Modificacion_Tablas.py`.
-7. **Repositorio de catálogos (spec 007):** La gestión de los cinco catálogos se extrajo a `modulos/catalogos/ui.py`, delegando en `infra/catalogos_repository.py`. Se eliminó el último `exec(open(...))` de `pages/1_Configuracion.py`, que quedó 100% libre de `exec` y desacoplada de la base de datos.
-8. **Repositorio de certificados (spec 008):** El registro de eventos e historial de certificaciones se extrajo a `modulos/gestion_certificados/ui.py`, delegando en `infra/certificados_repository.py`. Se eliminó el `exec` de la pestaña 2 de `pages/2_Administracion_Operadores.py` y el módulo heredado `6_Gestion_Certificados.py` quedó deprecado como redirección.
+1. **Clean Architecture ligera:** separación en dominio, infraestructura, fachadas
+   y presentación.
+2. **Inyección de dependencias:** el motor se inyecta (o se resuelve perezosamente)
+   para facilitar las pruebas unitarias con SQLite temporal.
+3. **Patrón Facade:** las vistas de Streamlit ignoran la existencia de tablas,
+   columnas y consultas; todo pasa por la fachada de su dominio.
+4. **Fachadas especializadas (spec 025):** se introdujeron
+   `CertificadosFacade`, `ComportamientosFacade`, `ReportesFacade` y
+   `ConfiguracionFacade` y se adaptaron sus `ui.py` para no importar repositorios.
+5. **Servicio de respaldos (spec 005):** `BackupService` encapsula el sistema de
+   archivos, la comparación, la restauración y el estado de versión de la base.
+6. **Optimización del motor (spec 025):** pragmas de SQLite e índices explícitos
+   declarados en `db.py` y aplicados por los scripts de carga.
 
 ---
 

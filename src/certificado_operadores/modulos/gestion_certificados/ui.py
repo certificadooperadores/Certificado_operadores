@@ -3,7 +3,7 @@
 Capa de presentación pura: busca al operador activo por cédula o código,
 captura los campos de cada tipo de evento y delega **todo** el acceso a datos
 (catálogos, validación de operador y registro de eventos) en
-:class:`~certificado_operadores.infra.certificados_repository.CertificadosRepository`.
+:class:`~certificado_operadores.facade_certificados.CertificadosFacade`.
 No contiene sentencias SQL ni conoce el motor ni el esquema.
 
 También expone las funciones puras de validación y construcción de datos que
@@ -35,8 +35,7 @@ _RUTA_SRC = Path(__file__).resolve().parents[3]
 if str(_RUTA_SRC) not in sys.path:
     sys.path.append(str(_RUTA_SRC))
 
-from certificado_operadores.infra.catalogos_repository import VehiculoInfo  # noqa: E402
-from certificado_operadores.infra.certificados_repository import (  # noqa: E402
+from certificado_operadores.facade_certificados import (  # noqa: E402
     ACCION_CARGA_MASIVA,
     TIPO_EVENTO_ADVERTENCIA,
     TIPO_EVENTO_CANCELACION,
@@ -47,10 +46,11 @@ from certificado_operadores.infra.certificados_repository import (  # noqa: E402
     TIPO_EVENTO_RENOVACION,
     TIPO_EVENTO_RESTRICCION_MEDICA,
     TIPO_EVENTO_SUSPENSION,
-    CertificadosRepository,
+    CertificadosFacade,
     DatosEvento,
+    TipoEventoInfo,
+    VehiculoInfo,
 )
-from certificado_operadores.infra.eventos_repository import TipoEventoInfo  # noqa: E402
 
 TITULO = "Registro de Eventos e Historial"
 """Título de la vista de gestión de certificados."""
@@ -491,7 +491,7 @@ def _render_encabezado() -> None:
 
 
 def _render_individual(
-    repositorio: CertificadosRepository,
+    repositorio: CertificadosFacade,
     tipos: list[TipoEventoInfo],
     vehiculos: list[VehiculoInfo],
     evaluadores: list[str],
@@ -659,7 +659,7 @@ def _render_campos_evento(
 
 
 def _render_masiva(
-    repositorio: CertificadosRepository,
+    repositorio: CertificadosFacade,
     tipos: list[TipoEventoInfo],
     evaluadores: list[str],
     usuario: str,
@@ -741,7 +741,7 @@ def _render_masiva(
     st.balloons()
 
 
-def render_gestion_certificados(repositorio: CertificadosRepository | None = None) -> None:
+def render_gestion_certificados(repositorio: CertificadosFacade | None = None) -> None:
     """Renderiza la pestaña completa de gestión de certificados (spec 008).
 
     Args:
@@ -749,7 +749,7 @@ def render_gestion_certificados(repositorio: CertificadosRepository | None = Non
             construye uno con la configuración por defecto; inyectarlo facilita
             las pruebas.
     """
-    repositorio = repositorio or CertificadosRepository()
+    repositorio = repositorio or CertificadosFacade()
     usuario = st.session_state.get("usuario", USUARIO_POR_DEFECTO)
     tipos = repositorio.listar_tipos_evento()
     vehiculos = repositorio.listar_vehiculos()

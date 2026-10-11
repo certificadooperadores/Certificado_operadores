@@ -3,7 +3,7 @@
 Capa de presentación pura: busca al operador, captura el registro individual,
 procesa la carga masiva desde Excel y muestra el reporte de reincidencia.
 Delega **todo** el acceso a datos (consultas y mutaciones) en
-:class:`~certificado_operadores.infra.comportamientos_repository.ComportamientosRepository`.
+:class:`~certificado_operadores.facade_comportamientos.ComportamientosFacade`.
 No contiene sentencias de base de datos ni conoce el motor ni el esquema.
 
 También expone funciones puras (limpieza de celdas, validación de plantillas y
@@ -34,9 +34,9 @@ _RUTA_SRC = Path(__file__).resolve().parents[3]
 if str(_RUTA_SRC) not in sys.path:
     sys.path.append(str(_RUTA_SRC))
 
-from certificado_operadores.infra.comportamientos_repository import (  # noqa: E402
+from certificado_operadores.facade_comportamientos import (  # noqa: E402
     AccionReincidencia,
-    ComportamientosRepository,
+    ComportamientosFacade,
     DatosComportamiento,
     DetalleComportamientoInfo,
     DetalleReincidenciaInfo,
@@ -351,7 +351,7 @@ def filas_detalle_reincidencias(
 
 
 # --- Render: registro individual (RF-01) -------------------------------------
-def _render_individual(repositorio: ComportamientosRepository, usuario: str) -> None:
+def _render_individual(repositorio: ComportamientosFacade, usuario: str) -> None:
     """Renderiza y procesa el registro individual de comportamientos (RF-01).
 
     Args:
@@ -445,7 +445,7 @@ def _render_individual(repositorio: ComportamientosRepository, usuario: str) -> 
 
 # --- Render: carga masiva (RF-02) --------------------------------------------
 def _validar_fila_masiva(
-    repositorio: ComportamientosRepository, indice: Hashable, fila: pd.Series, df: pd.DataFrame
+    repositorio: ComportamientosFacade, indice: Hashable, fila: pd.Series, df: pd.DataFrame
 ) -> None:
     """Valida una fila del Excel y anota el resultado en el ``DataFrame``.
 
@@ -531,7 +531,7 @@ def _datos_desde_fila(fila: pd.Series) -> DatosComportamiento:
     )
 
 
-def _render_masiva(repositorio: ComportamientosRepository, usuario: str) -> None:
+def _render_masiva(repositorio: ComportamientosFacade, usuario: str) -> None:
     """Renderiza y procesa la carga masiva de comportamientos (RF-02).
 
     Args:
@@ -591,7 +591,7 @@ def _render_masiva(repositorio: ComportamientosRepository, usuario: str) -> None
 
 
 # --- Render: reincidencia (RF-03) --------------------------------------------
-def _render_evaluacion(repositorio: ComportamientosRepository, usuario: str) -> None:
+def _render_evaluacion(repositorio: ComportamientosFacade, usuario: str) -> None:
     """Renderiza y ejecuta la evaluación de reincidencia (RF-03).
 
     Args:
@@ -609,7 +609,7 @@ def _render_evaluacion(repositorio: ComportamientosRepository, usuario: str) -> 
         st.info("No se encontraron nuevos casos de reincidencia.")
 
 
-def _render_detalle_casos(repositorio: ComportamientosRepository, usuario: str) -> None:
+def _render_detalle_casos(repositorio: ComportamientosFacade, usuario: str) -> None:
     """Renderiza el detalle de casos, filtros y determinación (RF-03).
 
     Args:
@@ -720,7 +720,7 @@ def _render_detalle_casos(repositorio: ComportamientosRepository, usuario: str) 
 
 
 def _render_caso(
-    rw: pd.Series, df_detalle: pd.DataFrame, usuario: str, repositorio: ComportamientosRepository
+    rw: pd.Series, df_detalle: pd.DataFrame, usuario: str, repositorio: ComportamientosFacade
 ) -> None:
     """Renderiza un caso de reincidencia con su determinación y acción.
 
@@ -780,7 +780,7 @@ def _render_accion_caso(
     det_caso: pd.DataFrame | None,
     nueva_det: str,
     usuario: str,
-    repositorio: ComportamientosRepository,
+    repositorio: ComportamientosFacade,
 ) -> None:
     """Renderiza y registra la acción del caso en el historial del operador.
 
@@ -830,7 +830,7 @@ def _render_accion_caso(
     st.rerun()
 
 
-def _render_importar_acciones(repositorio: ComportamientosRepository, usuario: str) -> None:
+def _render_importar_acciones(repositorio: ComportamientosFacade, usuario: str) -> None:
     """Renderiza y procesa la importación de acciones desde Excel (RF-03).
 
     Args:
@@ -883,7 +883,7 @@ def _render_importar_acciones(repositorio: ComportamientosRepository, usuario: s
 
 
 def _validar_fila_accion(
-    repositorio: ComportamientosRepository, indice: Hashable, fila: pd.Series, df: pd.DataFrame
+    repositorio: ComportamientosFacade, indice: Hashable, fila: pd.Series, df: pd.DataFrame
 ) -> None:
     """Valida una fila de acción y anota el resultado en el ``DataFrame``.
 
@@ -947,7 +947,7 @@ def _accion_desde_fila(fila: pd.Series) -> AccionReincidencia:
     )
 
 
-def _render_reincidencia(repositorio: ComportamientosRepository, usuario: str) -> None:
+def _render_reincidencia(repositorio: ComportamientosFacade, usuario: str) -> None:
     """Renderiza la pestaña completa de reincidencia (RF-03).
 
     Args:
@@ -971,7 +971,7 @@ def _render_reincidencia(repositorio: ComportamientosRepository, usuario: str) -
     _render_detalle_casos(repositorio, usuario)
 
 
-def render_reporte_comportamientos(repositorio: ComportamientosRepository | None = None) -> None:
+def render_reporte_comportamientos(repositorio: ComportamientosFacade | None = None) -> None:
     """Renderiza la pestaña completa del reporte de comportamientos (spec 009).
 
     Args:
@@ -979,7 +979,7 @@ def render_reporte_comportamientos(repositorio: ComportamientosRepository | None
             construye uno con la configuración por defecto; inyectarlo facilita
             las pruebas.
     """
-    repositorio = repositorio or ComportamientosRepository()
+    repositorio = repositorio or ComportamientosFacade()
     usuario = st.session_state.get("usuario", USUARIO_POR_DEFECTO)
     st.title(TITULO)
     st.markdown(

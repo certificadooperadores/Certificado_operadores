@@ -24,15 +24,20 @@ Mantener actualizado en el mismo commit que cualquier cambio de código.
 | `infra.backup_service` | `src/certificado_operadores/infra/backup_service.py` | Servicio de copias de seguridad de SQLite; encapsula el sistema de archivos, la comparación y la restauración. |
 | `administrar_backups` | `src/certificado_operadores/modulos/administrar_backups/ui.py` | Interfaz Streamlit de backups; consume `BackupService` y no contiene SO ni SQL. |
 | `infra.eventos_repository` | `src/certificado_operadores/infra/eventos_repository.py` | Acceso a datos de `fact_eventos_operador`: filtros, lotes, mutaciones con auditoría, integridad referencial, catálogos oficiales, columnas completas de negocio y bloqueo de campos por categoría de evento (specs 006, 015, 017, 018, 019 y 020). |
-| `correccion_registros` | `src/certificado_operadores/modulos/correccion_registros/ui.py` | Interfaz Streamlit de corrección de registros con editor tipo Excel, búsqueda rápida, acciones en bloque y proyección de columnas por categoría de evento; consume `EventosRepository` y no contiene SQL. |
+| `correccion_registros` | `src/certificado_operadores/modulos/correccion_registros/ui.py` | Interfaz Streamlit de corrección de registros con editor tipo Excel, búsqueda rápida, acciones en bloque y proyección de columnas por categoría de evento; consume `ConfiguracionFacade` y no contiene SQL. |
 | `infra.catalogos_repository` | `src/certificado_operadores/infra/catalogos_repository.py` | Acceso a datos de los cinco catálogos (empresas, vehículos, impactos, comportamientos y detalles) con auditoría (SQLAlchemy). |
-| `catalogos` | `src/certificado_operadores/modulos/catalogos/ui.py` | Interfaz Streamlit de catálogos; consume `CatalogosRepository` y no contiene SQL. |
+| `catalogos` | `src/certificado_operadores/modulos/catalogos/ui.py` | Interfaz Streamlit de catálogos; consume `ConfiguracionFacade` y no contiene SQL. |
 | `infra.certificados_repository` | `src/certificado_operadores/infra/certificados_repository.py` | Acceso a datos del registro de eventos y certificados: catálogos auxiliares, operador activo y registro con auditoría (SQLAlchemy). |
-| `gestion_certificados` | `src/certificado_operadores/modulos/gestion_certificados/ui.py` | Interfaz Streamlit de gestión de certificados; consume `CertificadosRepository` y no contiene SQL. |
+| `gestion_certificados` | `src/certificado_operadores/modulos/gestion_certificados/ui.py` | Interfaz Streamlit de gestión de certificados; consume `CertificadosFacade` y no contiene SQL. |
 | `infra.comportamientos_repository` | `src/certificado_operadores/infra/comportamientos_repository.py` | Acceso a datos del reporte de comportamientos: búsqueda de operador, registro individual/masivo y reincidencia con auditoría (SQLAlchemy). |
-| `reporte_comportamientos` | `src/certificado_operadores/modulos/reporte_comportamientos/ui.py` | Interfaz Streamlit del reporte de comportamientos; consume `ComportamientosRepository` y no contiene SQL. |
+| `reporte_comportamientos` | `src/certificado_operadores/modulos/reporte_comportamientos/ui.py` | Interfaz Streamlit del reporte de comportamientos; consume `ComportamientosFacade` y no contiene SQL. |
 | `infra.reportes_repository` | `src/certificado_operadores/infra/reportes_repository.py` | Acceso a datos de la vista de reportes: catálogos de filtros, consultas consolidadas y auditoría de exportaciones (SQLAlchemy). |
-| `reportes` | `src/certificado_operadores/modulos/reportes/ui.py` | Interfaz Streamlit de reportes y exportaciones; consume `ReportesRepository`, no contiene SQL ni `exec`. |
+| `reportes` | `src/certificado_operadores/modulos/reportes/ui.py` | Interfaz Streamlit de reportes y exportaciones; consume `ReportesFacade`, no contiene SQL ni `exec`. |
+| `facade_certificados` | `src/certificado_operadores/facade_certificados.py` | Fachada de certificados (spec 025); encapsula `CertificadosRepository` y `OperadoresRepository` y delega sin ejecutar SQL. |
+| `facade_comportamientos` | `src/certificado_operadores/facade_comportamientos.py` | Fachada de comportamientos y reincidencias (spec 025); encapsula `ComportamientosRepository` y delega sin ejecutar SQL. |
+| `facade_reportes` | `src/certificado_operadores/facade_reportes.py` | Fachada de reportes y exportaciones (spec 025); encapsula `ReportesRepository` y reexporta las funciones puras de exportación. |
+| `facade_configuracion` | `src/certificado_operadores/facade_configuracion.py` | Fachada de configuración (spec 025); encapsula `CatalogosRepository` y `EventosRepository` y delega sin ejecutar SQL. |
+| `utils` | `src/certificado_operadores/utils.py` | Utilidades de presentación; indicador de versión de la base delegando en `BackupService` (spec 025). |
 | `estilos` | `src/certificado_operadores/estilos.py` | Estilos visuales institucionales de Metrocali, paleta oficial y logo de la barra lateral (spec 023). |
 
 ## Funciones
@@ -65,6 +70,31 @@ y los estados `ESTADO_VIGENTE`, `ESTADO_POR_VENCER`, `ESTADO_VENCIDO`,
 `ESTADO_SIN_CERTIFICADO`, `ESTADO_CANCELADO`. La spec 023 añade los mensajes del
 guardado de operadores: `MENSAJE_OPERADOR_CREADO`, `MENSAJE_OPERADOR_DUPLICADO`,
 `MENSAJE_OPERADOR_CAMPOS_OBLIGATORIOS` y `MENSAJE_OPERADOR_ERROR`.
+
+### Módulo `db` — `src/certificado_operadores/db.py`
+
+Motor SQLAlchemy sobre la base local `operadores.db`, utilidades de consulta y
+**optimización del motor** (spec 025): pragmas de rendimiento e índices
+estratégicos idempotentes.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `configurar_pragmas` | `(motor: Engine) -> None` | Registra el listener que aplica `journal_mode=WAL`, `busy_timeout=5000` y `synchronous=NORMAL` a cada conexión. | — |
+| `crear_indices` | `(motor: Engine) -> None` | Crea con `CREATE INDEX IF NOT EXISTS` los índices estratégicos de las tablas existentes. | — |
+| `get_engine` | `() -> Engine` | Motor SQLite cacheado, con pragmas aplicados e índices garantizados si la base existe. | `Engine` |
+| `get_connection` | `()` | Conexión activa para SQL manual. | `Connection` |
+| `run_query` | `(query, params=None)` | Ejecuta un `SELECT` y devuelve un `DataFrame`. | `pd.DataFrame` |
+| `run_transaction` | `(query, params=None)` | Ejecuta `INSERT`/`UPDATE`/`DELETE` con commit. | `tuple[bool, str]` |
+| `registrar_auditoria` | `(usuario, accion, detalles=None)` | Inserta un registro en `log_auditoria`. | — |
+
+Constantes (spec 025): `PRAGMAS_SQLITE` (`journal_mode = WAL`,
+`busy_timeout = 5000`, `synchronous = NORMAL`) e `INDICES_SQLITE` (los siete
+índices: `idx_persona_cedula`, `idx_codigo_operador`, `idx_codigo_persona`,
+`idx_eventos_operador`, `idx_eventos_fecha`, `idx_comportamiento_codigo` y
+`idx_reincidencia_codigo`). `crear_indices` solo crea un índice cuando su tabla y
+todas sus columnas existen; en el modelo físico real `idx_eventos_fecha` indexa
+`fecha_certificado`/`fecha_retiro` y `idx_comportamiento_codigo` indexa
+`id_codigo`/`fecha_evento`.
 
 ### Módulo `infra` — `src/certificado_operadores/infra/repository.py`
 
@@ -105,6 +135,110 @@ rangos numéricos por concesionario: GIT (1) 10001-19999, ByN (2) 20001-29999, E
 | `OperadoresFacade.listar_tipologias` | `() -> list[TipologiaInfo]` | Spec 023: tipologías de bus oficiales. | `list[TipologiaInfo]` |
 | `OperadoresFacade.guardar_operador` | `(registro: RegistroOperador, usuario: str = "") -> ResultadoOperador` | Spec 023: valida duplicados y campos obligatorios y persiste el operador. | `ResultadoOperador` |
 | `OperadoresFacade._campos_obligatorios` | `(registro: RegistroOperador) -> bool` | Indica si el registro trae los datos obligatorios. | `bool` |
+
+### Módulo `facade_certificados` — `src/certificado_operadores/facade_certificados.py`
+
+Fachada de certificados (spec 025). Encapsula `CertificadosRepository` y
+`OperadoresRepository`; reexporta los DTOs y constantes que consume la vista.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `CertificadosFacade.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa la fachada con sus dos repositorios. | — |
+| `CertificadosFacade.motor` | `propiedad -> Engine` | Motor SQLAlchemy delegado al repositorio de certificados. | `Engine` |
+| `CertificadosFacade.listar_tipos_evento` | `() -> list[TipoEventoInfo]` | Tipos de evento disponibles. | `list[TipoEventoInfo]` |
+| `CertificadosFacade.listar_vehiculos` | `() -> list[VehiculoInfo]` | Vehículos evaluables del catálogo. | `list[VehiculoInfo]` |
+| `CertificadosFacade.listar_evaluadores` | `() -> list[str]` | Evaluadores históricos. | `list[str]` |
+| `CertificadosFacade.buscar_operador_activo_por_codigo` | `(codigo: int) -> OperadorActivoInfo \| None` | Busca el operador activo por código. | `OperadorActivoInfo` o `None` |
+| `CertificadosFacade.buscar_operador_activo_por_cedula` | `(cedula: int) -> OperadorActivoInfo \| None` | Busca el operador activo por cédula. | `OperadorActivoInfo` o `None` |
+| `CertificadosFacade.registrar_evento` | `(datos: DatosEvento, usuario: str) -> int` | Registra un evento individual. | `int` |
+| `CertificadosFacade.registrar_eventos` | `(eventos, usuario, accion=ACCION_CARGA_MASIVA, detalles="") -> int` | Registra eventos de forma masiva con auditoría. | `int` |
+| `CertificadosFacade.validar_certificado` | `(codigo: int) -> EstadoCertificado` | Calcula el estado/alerta del certificado. | `EstadoCertificado` |
+
+### Módulo `facade_comportamientos` — `src/certificado_operadores/facade_comportamientos.py`
+
+Fachada de comportamientos y reincidencias (spec 025). Encapsula
+`ComportamientosRepository`.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `ComportamientosFacade.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa la fachada y su repositorio. | — |
+| `ComportamientosFacade.motor` | `propiedad -> Engine` | Motor SQLAlchemy delegado. | `Engine` |
+| `ComportamientosFacade.buscar_operador_por_codigo` | `(codigo: int) -> OperadorComportamientoInfo \| None` | Busca un operador por código activo. | DTO o `None` |
+| `ComportamientosFacade.buscar_operador_por_cedula` | `(cedula: int) -> OperadorComportamientoInfo \| None` | Busca un operador por cédula. | DTO o `None` |
+| `ComportamientosFacade.listar_detalles_comportamiento` | `() -> list[DetalleComportamientoInfo]` | Jerarquías de comportamiento. | `list[DetalleComportamientoInfo]` |
+| `ComportamientosFacade.registrar_comportamiento` | `(datos: DatosComportamiento, usuario: str) -> int` | Registra un comportamiento individual. | `int` |
+| `ComportamientosFacade.resolver_codigo_activo` | `(codigo: int) -> int \| None` | Devuelve el código si está activo. | `int` o `None` |
+| `ComportamientosFacade.resolver_jerarquia_por_descripcion` | `(descripcion: str) -> int \| None` | Resuelve la jerarquía por descripción. | `int` o `None` |
+| `ComportamientosFacade.buscar_comportamiento_por_caso` | `(caso: str) -> int \| None` | Busca un comportamiento por caso. | `int` o `None` |
+| `ComportamientosFacade.guardar_comportamientos` | `(filas, usuario) -> tuple[int, int]` | Carga masiva validada de comportamientos. | `tuple[int, int]` |
+| `ComportamientosFacade.listar_impactos` | `() -> list[ImpactoInfo]` | Impactos con máximo mayor que cero. | `list[ImpactoInfo]` |
+| `ComportamientosFacade.listar_comportamientos_por_impacto` | `(id_impacto: int) -> list[...]` | Comportamientos de un impacto. | `list` |
+| `ComportamientosFacade.listar_codigos_pendientes` | `(id_comportamiento: int) -> list[int]` | Códigos con hechos pendientes. | `list[int]` |
+| `ComportamientosFacade.listar_hechos_pendientes` | `(id_comportamiento, id_codigo) -> list[...]` | Hechos pendientes de vincular. | `list` |
+| `ComportamientosFacade.listar_pares_reincidencia` | `() -> set[tuple[int, int]]` | Pares de hechos ya vinculados. | `set` |
+| `ComportamientosFacade.generar_reincidencias` | `(usuario: str = "") -> int` | Genera casos de reincidencia nuevos. | `int` |
+| `ComportamientosFacade.listar_empresas` | `() -> list[EmpresaInfo]` | Empresas ordenadas por nombre. | `list[EmpresaInfo]` |
+| `ComportamientosFacade.listar_reincidencias` | `() -> list[ReincidenciaInfo]` | Casos de reincidencia. | `list[ReincidenciaInfo]` |
+| `ComportamientosFacade.listar_detalle_reincidencias` | `() -> list[DetalleReincidenciaInfo]` | Detalle de hechos de los casos. | `list[DetalleReincidenciaInfo]` |
+| `ComportamientosFacade.obtener_reincidencia_accion` | `(id_reincidencia: int) -> ReincidenciaAccionInfo \| None` | Código y evento del caso. | DTO o `None` |
+| `ComportamientosFacade.actualizar_determinacion` | `(id_reincidencia, determinacion, usuario) -> None` | Actualiza la determinación de Metrocali. | — |
+| `ComportamientosFacade.registrar_accion_reincidencia` | `(accion, usuario) -> int` | Registra una acción derivada. | `int` |
+| `ComportamientosFacade.importar_acciones_reincidencia` | `(acciones, usuario) -> tuple[int, int]` | Importa acciones desde Excel. | `tuple[int, int]` |
+| `ComportamientosFacade.registrar_reincidencia` | `(id_impacto, id_comportamiento, id_codigo, fecha_inicio, fecha_fin, cantidad, resumen, usuario, hechos) -> int` | Registra un caso de reincidencia con sus hechos. | `int` |
+
+### Módulo `facade_reportes` — `src/certificado_operadores/facade_reportes.py`
+
+Fachada de reportes y exportaciones (spec 025). Encapsula `ReportesRepository` y
+reexporta `generar_excel`/`generar_csv`.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `ReportesFacade.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa la fachada y su repositorio. | — |
+| `ReportesFacade.motor` | `propiedad -> Engine` | Motor SQLAlchemy delegado. | `Engine` |
+| `ReportesFacade.listar_reportes` | `() -> tuple[DefinicionReporte, ...]` | Definiciones de reportes disponibles. | `tuple` |
+| `ReportesFacade.listar_empresas` | `() -> list[EmpresaInfo]` | Empresas para el filtro. | `list[EmpresaInfo]` |
+| `ReportesFacade.listar_tipologias` | `() -> list[TipologiaInfo]` | Tipologías para el filtro. | `list[TipologiaInfo]` |
+| `ReportesFacade.listar_estados` | `() -> list[str]` | Estados de vigencia. | `list[str]` |
+| `ReportesFacade.listar_tipos_evento` | `() -> list[TipoEventoInfo]` | Tipos de evento para el filtro. | `list[TipoEventoInfo]` |
+| `ReportesFacade.listar_impactos` | `() -> list[ImpactoInfo]` | Impactos para el filtro. | `list[ImpactoInfo]` |
+| `ReportesFacade.construir_condiciones` | `(id_reporte: str, seleccion) -> tuple[list[str], dict]` | Condiciones SQL y parámetros del reporte. | `tuple` |
+| `ReportesFacade.ejecutar_reporte` | `(id_reporte: str, seleccion) -> pd.DataFrame` | Ejecuta un reporte consolidado. | `pd.DataFrame` |
+| `ReportesFacade.registrar_exportacion` | `(usuario, nombre_reporte, total) -> None` | Audita la exportación. | — |
+
+### Módulo `facade_configuracion` — `src/certificado_operadores/facade_configuracion.py`
+
+Fachada de configuración (spec 025). Encapsula `CatalogosRepository` y
+`EventosRepository`; reexporta los DTOs, catálogos y excepciones de corrección.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `ConfiguracionFacade.__init__` | `(engine: Engine \| None = None) -> None` | Inicializa la fachada con ambos repositorios. | — |
+| `ConfiguracionFacade.motor` | `propiedad -> Engine` | Motor SQLAlchemy delegado. | `Engine` |
+| `ConfiguracionFacade.listar_empresas` | `() -> list[EmpresaInfo]` | Empresas de transporte. | `list[EmpresaInfo]` |
+| `ConfiguracionFacade.crear_empresa` | `(nombre, usuario) -> int` | Crea una empresa con auditoría. | `int` |
+| `ConfiguracionFacade.cambiar_vigencia_empresa` | `(id_empresa, vigencia) -> None` | Cambia el estado de una empresa. | — |
+| `ConfiguracionFacade.renombrar_empresa` | `(id_empresa, nombre) -> None` | Renombra una empresa. | — |
+| `ConfiguracionFacade.listar_vehiculos` | `() -> list[VehiculoInfo]` | Vehículos del catálogo. | `list[VehiculoInfo]` |
+| `ConfiguracionFacade.crear_vehiculo` | `(nombre, usuario) -> int` | Crea un vehículo con auditoría. | `int` |
+| `ConfiguracionFacade.renombrar_vehiculo` | `(id_vehiculo, nombre) -> None` | Renombra un vehículo. | — |
+| `ConfiguracionFacade.listar_impactos` | `() -> list[ImpactoInfo]` | Impactos del catálogo. | `list[ImpactoInfo]` |
+| `ConfiguracionFacade.crear_impacto` | `(nombre, maximo, dias_maximo, usuario) -> int` | Crea un impacto con auditoría. | `int` |
+| `ConfiguracionFacade.actualizar_impacto` | `(id_impacto, nombre, maximo, dias_maximo, usuario) -> None` | Actualiza un impacto. | — |
+| `ConfiguracionFacade.listar_comportamientos` | `() -> list[ComportamientoInfo]` | Comportamientos cruzados con su impacto. | `list[ComportamientoInfo]` |
+| `ConfiguracionFacade.crear_comportamiento` | `(descripcion, id_impacto, usuario) -> int` | Crea un comportamiento. | `int` |
+| `ConfiguracionFacade.actualizar_comportamiento` | `(id_comportamiento, descripcion, id_impacto, usuario) -> None` | Actualiza un comportamiento. | — |
+| `ConfiguracionFacade.listar_detalles` | `(fuente=None, limite=LIMITE_DETALLES) -> list[...]` | Detalles de comportamiento. | `list` |
+| `ConfiguracionFacade.crear_detalle` | `(datos, usuario) -> int` | Crea un detalle de comportamiento. | `int` |
+| `ConfiguracionFacade.actualizar_detalle` | `(id_jerarquia, datos, usuario) -> None` | Actualiza un detalle. | — |
+| `ConfiguracionFacade.listar_tipos_evento` | `() -> list[TipoEventoInfo]` | Tipos de evento del editor. | `list[TipoEventoInfo]` |
+| `ConfiguracionFacade.listar_fuentes_comportamiento` | `() -> list[str]` | Fuentes oficiales. | `list[str]` |
+| `ConfiguracionFacade.listar_descripciones_comportamiento` | `() -> list[str]` | Descripciones oficiales. | `list[str]` |
+| `ConfiguracionFacade.listar_registros` | `(clave, limite=LIMITE_POR_DEFECTO, id_tipo_evento=None) -> list[RegistroInfo]` | Registros de una tabla del editor. | `list[RegistroInfo]` |
+| `ConfiguracionFacade.mutar_vigencia` | `(clave, ids, vigencia, usuario) -> int` | Cambia la vigencia de un conjunto de registros. | `int` |
+| `ConfiguracionFacade.eliminar_registros_tabla` | `(clave, ids, usuario) -> int` | Elimina registros de una tabla. | `int` |
+| `ConfiguracionFacade.contar_dependencias_operador` | `(id_persona, id_codigo=None) -> dict[str, int]` | Dependencias de un operador. | `dict` |
+| `ConfiguracionFacade.validar_codigo_existe` | `(id_codigo: int) -> bool` | Indica si el código existe. | `bool` |
+| `ConfiguracionFacade.actualizar_registros_seguros` | `(clave, cambios, usuario) -> int` | Aplica cambios validados de forma atómica. | `int` |
 
 ### Módulo `admin_operadores` — `src/certificado_operadores/modulos/admin_operadores/ui.py`
 
@@ -153,6 +287,18 @@ Punto de entrada: `src/certificado_operadores/pages/2_Administracion_Operadores.
   puras `construir_registro`/`_indice_genero` y criterios estáticos (botón
   Guardar y `guardar_operador` CA-05, formulario en columnas y desplegables
   CA-04, UI sin SQL). Patrón AAA contra SQLite temporal.
+
+### Módulo `utils` — `src/certificado_operadores/utils.py`
+
+Utilidades de presentación compartidas (spec 025). El indicador lateral de
+versión ya no ejecuta SQL ni conoce rutas quemadas: delega en `BackupService`.
+
+| Función | Firma | Descripción | Devuelve |
+|---------|-------|-------------|----------|
+| `mostrar_badge_version` | `(servicio: BackupService \| None = None) -> None` | Muestra en la barra lateral el estado de versión de la base (actualizada o con respaldo nuevo disponible). | — |
+
+Constantes: `TITULO_ESTADO_DATOS`, `MENSAJE_DATOS_ACTUALIZADOS`,
+`MENSAJE_BACKUP_DISPONIBLE`, `TEXTO_REVISAR_BACKUPS`, `MENSAJE_ERROR_VERSION`.
 
 ### Módulo `estilos` — `src/certificado_operadores/estilos.py`
 
@@ -367,6 +513,8 @@ restauración atómica con respaldo de rescate (`restaurar_backup`).
 | `BackupService.directorio` | `propiedad -> Path` | Directorio de respaldos (inyectado, por entorno o por defecto). | `Path` |
 | `BackupService.origen_db` | `propiedad -> Path` | Ruta de la base de origen (inyectada o configurada). | `Path` |
 | `BackupService.listar_backups` | `() -> list[BackupInfo]` | RF-01: lista los respaldos del más reciente al más antiguo. | `list[BackupInfo]` |
+| `BackupService.version_actual` | `() -> VersionInfo \| None` | Spec 025: lee la última versión registrada en `dim_version_bd` (consulta desacoplada). | `VersionInfo` o `None` |
+| `BackupService.estado_version` | `() -> EstadoVersion \| None` | Spec 025: consolida el origen y si corresponde al respaldo más reciente. | `EstadoVersion` o `None` |
 | `BackupService.crear_backup` | `() -> BackupInfo` | RF-02: crea una copia versionada de la base actual. | `BackupInfo` |
 | `BackupService.proteger` | `(nombre: str) -> BackupInfo` | RF-03: marca el respaldo como no eliminable. | `BackupInfo` |
 | `BackupService.desproteger` | `(nombre: str) -> BackupInfo` | RF-03: quita la protección del respaldo. | `BackupInfo` |
@@ -385,14 +533,18 @@ restauración atómica con respaldo de rescate (`restaurar_backup`).
 | `BackupService._nombre_desprotegido` | `(nombre: str) -> str` | Nombre sin el sufijo `.protegido`. | `str` |
 
 Función de módulo: `_contar_filas(ruta: Path, tabla: str) -> int` — cuenta las filas
-de una tabla tolerando bases o tablas ausentes (devuelve 0).
+de una tabla tolerando bases o tablas ausentes (devuelve 0). La spec 025 añade la
+función de módulo `_nombre_base(nombre: str) -> str`, que quita el sufijo
+`.protegido` para comparar nombres de respaldo.
 
-DTO: `BackupInfo`. Excepciones: `BackupError`, `BackupProtegidoError`.
+DTOs: `BackupInfo`, `VersionInfo` (origen y fecha del último registro) y
+`EstadoVersion` (origen, fecha y si está actualizado). Excepciones: `BackupError`,
+`BackupProtegidoError`.
 Constantes: `DIRECTORIO_POR_DEFECTO`, `VARIABLE_ENTORNO_DIRECTORIO`,
 `VARIABLE_ENTORNO_ORIGEN`, `EXTENSION_BACKUP`, `SUFIJO_PROTEGIDO`,
 `FORMATO_FECHA`, `FORMATO_FECHA_HORA`, `SEPARADOR_VERSION`,
 `PREFIJO_RESPALDO_PREVENTIVO`, `TABLAS_COMPARACION`, `TABLA_VERSION_BD`,
-`USUARIO_RESTAURACION_POR_DEFECTO`.
+`ORIGEN_BD_INICIAL`, `USUARIO_RESTAURACION_POR_DEFECTO`.
 
 ### Módulo `administrar_backups` — `src/certificado_operadores/modulos/administrar_backups/ui.py`
 
@@ -530,7 +682,7 @@ Licencias, Comportamientos, Operadores y Códigos), muestra en cada una un
 **editor tipo hoja de cálculo** (``st.data_editor``) con listas desplegables en
 las columnas permitidas, columnas protegidas de solo lectura y un botón explícito
 **Guardar Cambios**; delega toda lectura, validación y mutación en
-`EventosRepository`, que aplica integridad referencial y transacciones atómicas
+`ConfiguracionFacade`, que aplica integridad referencial y transacciones atómicas
 con auditoría. La spec 018 añade la **barra de búsqueda rápida** (``🔍 Filtrar
 tabla``), las listas oficiales de licencias y comportamientos, la tabla de
 **Códigos** y los **botones de acción en bloque** (``Marcar Vigente``, ``Marcar
@@ -570,7 +722,7 @@ No contiene sentencias SQL (RNF-01) ni conoce el esquema (RNF-02).
 | `_procesar_bloque` | `(repositorio, definicion, ids, vigencia, rol, usuario) -> None` | Spec 018: aplica la acción en bloque (vigencia o eliminación) con auditoría. | — |
 | `_render_encabezado` | `() -> None` | Ayuda del módulo. | — |
 | `_render_tabla` | `(repositorio, definicion, rol, usuario, tipos_evento, opciones_fuente, opciones_descripcion) -> None` | Renderiza filtros (incluido el de categoría), editor Excel y acciones en bloque de una sub-pestaña. | — |
-| `render_correccion_registros` | `(repositorio: EventosRepository \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
+| `render_correccion_registros` | `(repositorio: ConfiguracionFacade \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
 
 Constantes: `ETIQUETA_GUARDAR`, `MENSAJE_DISPONIBLE`, `ERROR_ELIMINAR_SIN_PERMISO`,
 `MENSAJE_SIN_CAMBIOS` y, de la spec 018, `ETIQUETA_FILTRO`, `PLACEHOLDER_FILTRO`,
@@ -664,7 +816,7 @@ acciones `ACCION_CREAR_IMPACTO`, `ACCION_EDITAR_IMPACTO`,
 ### Módulo `catalogos` — `src/certificado_operadores/modulos/catalogos/ui.py`
 
 Interfaz Streamlit de los cinco catálogos. Delega toda lectura y mutación en
-`CatalogosRepository`; no contiene sentencias SQL (RNF-01) ni conoce el esquema.
+`ConfiguracionFacade`; no contiene sentencias SQL (RNF-01) ni conoce el esquema.
 El paquete expone `render_catalogos` en
 `src/certificado_operadores/modulos/catalogos/__init__.py`.
 
@@ -679,7 +831,7 @@ El paquete expone `render_catalogos` en
 | `opciones_impacto` | `(impactos: list[ImpactoInfo]) -> dict[int, str]` | Mapa `{id_impacto: impacto}`. | `dict` |
 | `id_impacto_desde_nombre` | `(opciones: dict[int, str], nombre: str) -> int \| None` | Recupera el id de un impacto por su nombre. | `int` o `None` |
 | `opciones_comportamiento` | `(comportamientos: list[ComportamientoInfo]) -> dict[str, str]` | Mapa `{str(id): comportamiento}`. | `dict` |
-| `render_catalogos` | `(repositorio: CatalogosRepository \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
+| `render_catalogos` | `(repositorio: ConfiguracionFacade \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
 
 Constantes: `USUARIO_POR_DEFECTO`, `ETIQUETA_TODAS_FUENTES`, `FUENTES_DETALLE`,
 `ACCION_ACTIVAR`, `ACCION_INACTIVAR`, `ACCIONES_ESTADO`, `TITULO`. Punto de
@@ -733,7 +885,7 @@ condicionamiento) y `ACCION_REGISTRO_EVENTO`, `ACCION_CARGA_MASIVA`.
 
 Interfaz Streamlit de registro de eventos e historial (spec 008). Ofrece el
 ingreso individual y la carga masiva desde Excel; busca al operador activo y
-delega todo el acceso a datos en `CertificadosRepository`. No contiene sentencias
+delega todo el acceso a datos en `CertificadosFacade`. No contiene sentencias
 SQL (RNF-01) ni conoce el esquema. El paquete expone `render_gestion_certificados`
 en `src/certificado_operadores/modulos/gestion_certificados/__init__.py`.
 
@@ -752,7 +904,7 @@ en `src/certificado_operadores/modulos/gestion_certificados/__init__.py`.
 | `construir_datos_evento` | `(id_codigo: int, id_tipo_evento: int, campos) -> DatosEvento` | Traduce los campos a un `DatosEvento`. | `DatosEvento` |
 | `construir_datos_desde_fila` | `(id_tipo_evento: int, id_codigo: int, fila) -> DatosEvento` | Traduce una fila del Excel a `DatosEvento`. | `DatosEvento` |
 | `construir_plantilla_eventos` | `(evaluadores: list[str]) -> bytes` | Genera el Excel de la plantilla maestra. | `bytes` |
-| `render_gestion_certificados` | `(repositorio: CertificadosRepository \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
+| `render_gestion_certificados` | `(repositorio: CertificadosFacade \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
 
 Constantes: `TITULO`, `EVALUADOR_OTRO`, `SEPARADOR_OPCION`,
 `NOMBRE_ARCHIVO_PLANTILLA`, `TIPO_MIME_EXCEL`, `HOJA_INSTRUCCIONES`,
@@ -826,7 +978,7 @@ las acciones `ACCION_*`.
 
 Interfaz Streamlit del reporte de comportamientos (spec 009): ingreso individual,
 carga masiva desde Excel y reincidencia. Delega todo el acceso a datos en
-`ComportamientosRepository`; no contiene sentencias SQL (RNF-01) ni conoce el
+`ComportamientosFacade`; no contiene sentencias SQL (RNF-01) ni conoce el
 esquema. El paquete expone `render_reporte_comportamientos` en
 `src/certificado_operadores/modulos/reporte_comportamientos/__init__.py`.
 
@@ -843,7 +995,7 @@ esquema. El paquete expone `render_reporte_comportamientos` en
 | `construir_plantilla_acciones` | `() -> bytes` | Genera el Excel de la plantilla de acciones. | `bytes` |
 | `filas_reincidencias` | `(casos: list[ReincidenciaInfo]) -> list[dict[str, object]]` | Mapea los casos a filas legibles. | `list[dict]` |
 | `filas_detalle_reincidencias` | `(detalles: list[DetalleReincidenciaInfo]) -> list[dict[str, object]]` | Mapea el detalle a filas legibles. | `list[dict]` |
-| `render_reporte_comportamientos` | `(repositorio: ComportamientosRepository \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
+| `render_reporte_comportamientos` | `(repositorio: ComportamientosFacade \| None = None) -> None` | Renderiza la pestaña completa (punto de entrada de `pages/`). | — |
 
 Constantes: `TITULO`, `USUARIO_POR_DEFECTO`, `NOMBRE_ARCHIVO_PLANTILLA`,
 `NOMBRE_ARCHIVO_PLANTILLA_ACCIONES`, `TIPO_MIME_EXCEL`, `HOJA_INSTRUCCIONES`,
@@ -926,7 +1078,7 @@ del reporte, **toolbar de filtros en una sola fila**, **KPIs de negocio por tipo
 de reporte** (prohibido sumar identificadores y sin la tarjeta de ``Columnas``),
 **botones de exportación en la cabecera** (sobre la tabla) y un **diagrama de
 Gantt de vencimientos por concesionario** (matplotlib) para licencias y
-certificados por vencer. Delega todo el acceso a datos en `ReportesRepository`;
+certificados por vencer. Delega todo el acceso a datos en `ReportesFacade`;
 no contiene sentencias SQL (RNF-01) ni conoce el esquema. El paquete expone
 `render_reportes` en `src/certificado_operadores/modulos/reportes/__init__.py`.
 
@@ -938,14 +1090,14 @@ no contiene sentencias SQL (RNF-01) ni conoce el esquema. El paquete expone
 | `calcular_kpis` | `(id_reporte: str, df: pd.DataFrame) -> list[tuple[str, int]]` | Spec 024: métricas de negocio por reporte (nunca suma IDs ni cuenta columnas). | `list[tuple[str, int]]` |
 | `generar_gantt_vencimientos` | `(df: pd.DataFrame) -> Figure` | Spec 024: diagrama de Gantt de vencimientos por concesionario. | `Figure` |
 | `_render_filtro` | `(filtro_tipo, filtro_etiqueta, defecto, repositorio, definicion) -> Any` | Spec 023: pinta un filtro y devuelve su valor tipado. | `Any` |
-| `_construir_seleccion` | `(definicion: DefinicionReporte, repositorio: ReportesRepository) -> tuple[SeleccionFiltros, bool]` | Spec 023: barra horizontal de filtros y botón. | `tuple` |
+| `_construir_seleccion` | `(definicion: DefinicionReporte, repositorio: ReportesFacade) -> tuple[SeleccionFiltros, bool]` | Spec 023: barra horizontal de filtros y botón. | `tuple` |
 | `_render_kpis` | `(df: pd.DataFrame, definicion: DefinicionReporte) -> None` | Spec 024: tarjetas métricas de negocio (`st.metric`). | — |
 | `_render_graficos_analiticos` | `(df: pd.DataFrame, definicion: DefinicionReporte) -> None` | Visualizaciones interactivas con Altair: distribución de activos por concesionario/tipología, certificados vencidos y cross-filtering tridireccional tipo Power BI (Operador, Causal, Ruta). | — |
 | `_render_gantt_vencimientos_interactivo` | `(df: pd.DataFrame) -> None` | Gráfico de barras apiladas interactivo por quincenas con paleta de criticidad y acceso expandible al Gantt Matplotlib. | — |
 | `_render_exportacion` | `(df: pd.DataFrame, definicion: DefinicionReporte) -> None` | Spec 024: botones Excel/CSV en la cabecera, sobre la tabla. | — |
 | `_render_gantt` | `(df: pd.DataFrame, definicion: DefinicionReporte) -> None` | Spec 024: Gantt solo para reportes de vencimiento. | — |
 | `_render_resultado` | `(df: pd.DataFrame \| None, definicion, repositorio, usuario: str) -> None` | Muestra KPIs, exportación, tabla, gráficos interactivos, Gantt y auditoría. | — |
-| `render_reportes` | `(repositorio: ReportesRepository \| None = None) -> None` | Renderiza la vista completa (punto de entrada de `pages/`). | — |
+| `render_reportes` | `(repositorio: ReportesFacade \| None = None) -> None` | Renderiza la vista completa (punto de entrada de `pages/`). | — |
 
 Constantes: `TITULO`, `SUBTITULO`, `USUARIO_POR_DEFECTO`, `ETIQUETA_EJECUTAR`
 (`Filtrar`), `OPCION_TODAS`, `OPCION_TODOS`, `MENSAJE_SIN_RESULTADOS`,

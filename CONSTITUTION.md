@@ -81,20 +81,25 @@ certificado-operadores/
 │   │   ├── administrar_backups/
 │   │   │   └── ui.py              # interfaz de Streamlit; consume BackupService
 │   │   ├── catalogos/
-│   │   │   └── ui.py              # interfaz de Streamlit; consume CatalogosRepository, sin SQL
+│   │   │   └── ui.py              # interfaz de Streamlit; consume ConfiguracionFacade, sin SQL
 │   │   ├── correccion_registros/
-│   │   │   └── ui.py              # interfaz de Streamlit; consume EventosRepository, sin SQL
+│   │   │   └── ui.py              # interfaz de Streamlit; consume ConfiguracionFacade, sin SQL
 │   │   ├── gestion_certificados/
-│   │   │   └── ui.py              # interfaz de Streamlit; consume CertificadosRepository, sin SQL
+│   │   │   └── ui.py              # interfaz de Streamlit; consume CertificadosFacade, sin SQL
 │   │   ├── reporte_comportamientos/
-│   │   │   └── ui.py              # interfaz de Streamlit; consume ComportamientosRepository, sin SQL
+│   │   │   └── ui.py              # interfaz de Streamlit; consume ComportamientosFacade, sin SQL
 │   │   ├── reportes/
-│   │   │   └── ui.py              # interfaz de Streamlit; consume ReportesRepository, sin SQL
+│   │   │   └── ui.py              # interfaz de Streamlit; consume ReportesFacade, sin SQL
 │   │   └── gestion_usuarios/
 │   │       └── ui.py              # interfaz de Streamlit; consume el Facade, sin SQL
 │   ├── pages/                     # puntos de entrada de Streamlit (páginas delgadas)
 │   ├── facade.py                  # Fachada de operadores (UI → Facade → Dominio → Infraestructura)
 │   ├── facade_usuarios.py         # Fachada de usuarios (UI → Facade → Dominio → Infraestructura)
+│   ├── facade_certificados.py     # Fachada de certificados y alertas (spec 025)
+│   ├── facade_comportamientos.py  # Fachada de comportamientos y reincidencias (spec 025)
+│   ├── facade_reportes.py         # Fachada de reportes y exportaciones (spec 025)
+│   ├── facade_configuracion.py    # Fachada de catálogos y corrección de registros (spec 025)
+│   ├── db.py                      # Motor SQLite, pragmas (WAL/busy_timeout) e índices (spec 025)
 │   ├── estilos.py                 # Estilos visuales institucionales Metrocali y logo (spec 023)
 │   └── ui_sesion.py               # Sesión persistente y refresco de datos (Streamlit; consume el Facade)
 ├── tests/                   # pruebas (pytest)
@@ -259,6 +264,7 @@ git push
 | 2026-10-10 | Migrar en `infra/reportes_repository.py` toda la sintaxis de fecha a SQLite: `DATE(columna)` y `DATE(fecha, '+3 years')`, diferencias de días con `JULIANDAY` y `CAST(ROUND(...) AS INTEGER)`, filtro de vencimiento `DATE('now', '+' || :dias || ' days')` y último certificado por código con `ROW_NUMBER() OVER (PARTITION BY id_codigo ORDER BY fecha_certificado DESC)` filtrando `rn = 1`; ampliar `tests/test_reportes.py` para ejecutar los ocho reportes sobre SQLite | Cumplir la spec 022: erradicar el `OperationalError: unrecognized token ":"` de PostgreSQL que rompía la página de Reportes y Exportaciones y garantizar la portabilidad de todas las consultas |
 | 2026-10-10 | Declarar el bloque `[theme]` institucional (`#046BD2`, `#FFFFFF`, `#F8FAFC`, `#111827`) en `.streamlit/config.toml`; crear `estilos.py` con `inyectar_estilos_metrocali()` (CSS, bordes y pestañas en azul) y el logo `assets/logo_metrocali.png` vía `st.logo`; añadir a `OperadoresRepository` los catálogos `listar_empresas`/`listar_tipologias` y `crear_operador`/`existe_operador_vigente`, el caso de uso `OperadoresFacade.guardar_operador` (valida duplicados y campos obligatorios) y los DTO `RegistroOperador`/`ResultadoOperador`; rediseñar `modulos/admin_operadores/ui.py` con el formulario horizontal y el botón `Guardar Operador`, y `modulos/reportes/ui.py` con toolbar en una sola fila, KPIs (`st.metric`) y gráfico nativo (`st.bar_chart`); retirar los emojis de todos los `st.title` y `st.tabs` | Cumplir la spec 023: estandarizar la identidad visual institucional de Metrocali MIO, ordenar el formulario de operadores con guardado real en base de datos y compactar los reportes, con pruebas verdes y sin advertencias |
 | 2026-10-10 | Refinar la UX de reportes en `modulos/reportes/ui.py`: ancho fluido en `estilos.py` (`max-width: none`), supresión total de `st.bar_chart` por código individual, KPIs de negocio por tipo de reporte (prohibido sumar IDs o contar columnas), botones de exportación en la cabecera y diagrama de Gantt de vencimientos por concesionario con `matplotlib`; en `reportes_repository.py` resolver la `Empresa` de reincidencias por prefijo COT con `COALESCE`, añadir filtro de fechas a reincidencias y filtro de concesionario a licencias/certificados por vencer, y proyectar el nombre legible de tipología (`_COLUMNA_TIPOLOGIA`); en `repository.py` calcular el siguiente código por rango de concesionario (`siguiente_codigo` con base `id_empresa * 10000`) | Cumplir la spec 024: eliminar el layout estrangulado, los gráficos inútiles y las métricas absurdas, y aplicar el patrón de códigos por COT, con pruebas verdes y sin advertencias |
+| 2026-10-10 | Configurar pragmas de alto rendimiento (`journal_mode=WAL`, `busy_timeout=5000`, `synchronous=NORMAL`) y crear los índices estratégicos en `db.py` y `scripts/cargar_excel_a_sqlite.py`; introducir `CertificadosFacade`, `ComportamientosFacade`, `ReportesFacade` y `ConfiguracionFacade` y adaptar los `ui.py` para no importar `*Repository`; desacoplar `utils.py` mediante `BackupService.version_actual`/`estado_version`; mover `init_db.py` a `temp_agent/` y eliminar `INSTRUCCIONES_OPENCODE.md`; declarar `altair` y crear `LICENSE` y `CODE_OF_CONDUCT.md` | Cumplir la spec 025: optimizar el motor SQLite, completar el patrón Facade 100%, erradicar residuos legacy y robustecer la gobernanza, con la suite (373 funciones de prueba; 402 casos) en verde y sin advertencias |
 
 ## 10. Notas y tareas pendientes
 

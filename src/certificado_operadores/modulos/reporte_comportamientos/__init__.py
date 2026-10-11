@@ -3,7 +3,7 @@
 Empaqueta la interfaz Streamlit del registro individual, la carga masiva y el
 reporte de reincidencia de comportamientos, separada del punto de entrada en
 ``pages/``. La interfaz consume exclusivamente la capa
-:class:`~certificado_operadores.infra.comportamientos_repository.ComportamientosRepository`,
+:class:`~certificado_operadores.facade_comportamientos.ComportamientosFacade`,
 de modo que no conoce el motor ni las sentencias de la base de datos.
 
 Autor: Ing. Miguel Angel Ortiz Roldan

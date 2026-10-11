@@ -8,7 +8,7 @@ columnas permitidas, columnas protegidas de solo lectura y un botón explícito
 sub-pestaña, listas oficiales de licencias y comportamientos, la tabla de
 **Códigos** y los botones de **acción en bloque** (marcar vigente/anulado y
 eliminar las filas seleccionadas). Toda consulta, validación y mutación se delega
-en :class:`~certificado_operadores.infra.eventos_repository.EventosRepository`, que
+en :class:`~certificado_operadores.facade_configuracion.ConfiguracionFacade`, que
 aplica integridad referencial y transacciones atómicas con auditoría.
 
 La UI no contiene sentencias SQL (RNF-01), no conoce el esquema (RNF-02) ni
@@ -42,7 +42,7 @@ from certificado_operadores.domain.models import (  # noqa: E402
     VIGENCIA_ANULADA,
 )
 from certificado_operadores.domain.usuarios import ROL_SUPER_ADMINISTRADOR  # noqa: E402
-from certificado_operadores.infra.eventos_repository import (  # noqa: E402
+from certificado_operadores.facade_configuracion import (  # noqa: E402
     CLAVE_TABLA_EVENTOS,
     ETIQUETA_ESTADO,
     ETIQUETA_EVENTO,
@@ -65,9 +65,9 @@ from certificado_operadores.infra.eventos_repository import (  # noqa: E402
     CodigoInexistenteError,
     ColumnaEditable,
     ColumnaProtegidaError,
+    ConfiguracionFacade,
     DefinicionTabla,
     DependenciaRegistroError,
-    EventosRepository,
     RegistroInfo,
     TipoEventoInfo,
     ValorInvalidoError,
@@ -549,7 +549,7 @@ def _guardar_mensaje(definicion: DefinicionTabla, tipo: str, mensaje: str) -> No
 
 
 def _procesar_guardado(
-    repositorio: EventosRepository,
+    repositorio: ConfiguracionFacade,
     definicion: DefinicionTabla,
     original: list[dict[str, object]],
     editor: object,
@@ -596,7 +596,7 @@ def _procesar_guardado(
 
 
 def _procesar_bloque(
-    repositorio: EventosRepository,
+    repositorio: ConfiguracionFacade,
     definicion: DefinicionTabla,
     ids: list[int],
     vigencia: int | None,
@@ -652,7 +652,7 @@ def _render_encabezado() -> None:
 
 
 def _render_tabla(
-    repositorio: EventosRepository,
+    repositorio: ConfiguracionFacade,
     definicion: DefinicionTabla,
     rol: str,
     usuario: str,
@@ -758,14 +758,14 @@ def _render_tabla(
         st.caption(f"🔒 {MENSAJE_DISPONIBLE}")
 
 
-def render_correccion_registros(repositorio: EventosRepository | None = None) -> None:
+def render_correccion_registros(repositorio: ConfiguracionFacade | None = None) -> None:
     """Renderiza la pestaña completa de corrección de registros.
 
     Args:
         repositorio: Repositorio de tablas a usar. Si es ``None`` se construye
             uno con la configuración por defecto; inyectarlo facilita las pruebas.
     """
-    repositorio = repositorio or EventosRepository()
+    repositorio = repositorio or ConfiguracionFacade()
     rol = st.session_state.get("rol", "")
     usuario = st.session_state.get("usuario", "")
     tipos_evento = repositorio.listar_tipos_evento()

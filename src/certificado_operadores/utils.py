@@ -1,58 +1,57 @@
-import os
-import streamlit as st
-from db import run_query
+"""Utilidades de presentación compartidas por la interfaz (spec 025).
 
-def mostrar_badge_version():
-    """Muestra un badge persistente en la barra lateral con la versión actual de la BD"""
+Expone el indicador lateral con el estado de la versión de la base de datos.
+No ejecuta SQL ni conoce rutas quemadas: consulta el estado a través de
+:class:`~certificado_operadores.infra.backup_service.BackupService`, respetando
+la regla ``UI → Facade → Dominio → Infraestructura``.
+
+Autor: Ing. Miguel Angel Ortiz Roldan
+"""
+
+from __future__ import annotations
+
+import streamlit as st
+
+from certificado_operadores.infra.backup_service import BackupService
+
+TITULO_ESTADO_DATOS = "### 💾 Estado de Datos"
+"""Encabezado del bloque de estado en la barra lateral."""
+
+MENSAJE_DATOS_ACTUALIZADOS = "🟢 **Datos Actualizados**"
+"""Mensaje cuando la base activa corresponde al respaldo más reciente."""
+
+MENSAJE_BACKUP_DISPONIBLE = "🟡 **¡Backup Nuevo Disponible!**"
+"""Mensaje cuando existe un respaldo nuevo sin restaurar."""
+
+TEXTO_REVISAR_BACKUPS = "Revisa la sección de Backups."
+"""Indicación para el usuario cuando hay un respaldo nuevo."""
+
+MENSAJE_ERROR_VERSION = "Error cargando versión de BD"
+"""Mensaje mostrado si la consulta del estado de versión falla."""
+
+
+def mostrar_badge_version(servicio: BackupService | None = None) -> None:
+    """Muestra un badge persistente con la versión actual de la base de datos.
+
+    Args:
+        servicio: Servicio de respaldos a consultar. Si es ``None`` se crea uno
+            con la configuración por defecto (spec 025).
+    """
     try:
-        # 1. Obtener la versión actual de la BD
-        df_version = run_query("SELECT archivo_origen, fecha_restauracion FROM dim_version_bd ORDER BY id_version DESC LIMIT 1")
-        if df_version.empty:
+        servicio = servicio or BackupService()
+        estado = servicio.estado_version()
+        if estado is None:
             return
-            
-        archivo_actual = df_version.iloc[0]['archivo_origen']
-        fecha_rest = df_version.iloc[0]['fecha_restauracion']
-        
-        # 2. Analizar el directorio de backups
-        backups_dir = '/Backups'
-        archivos_sql = []
-        if os.path.exists(backups_dir):
-            # Obtener todos los .sql
-            for f in os.listdir(backups_dir):
-                if f.endswith('.sql'):
-                    ruta_completa = os.path.join(backups_dir, f)
-                    # Guardamos (nombre_original, nombre_base, timestamp)
-                    # nombre_base es sin .protegido para poder comparar si fue protegido después
-                    nombre_base = f.replace('.protegido.sql', '.sql')
-                    archivos_sql.append((f, nombre_base, os.path.getmtime(ruta_completa)))
-                    
-        # Ordenar por fecha de modificación (más reciente primero)
-        archivos_sql.sort(key=lambda x: x[2], reverse=True)
-        
-        # 3. Determinar estado
-        es_ultimo = True
-        if archivos_sql:
-            ultimo_backup_base = archivos_sql[0][1]
-            # Si el archivo actual es la BD inicial o no es el último backup
-            if archivo_actual == 'BD Inicial - Carga desde CSV':
-                # Si hay backups, entonces hay algo más reciente (salvo que acabemos de iniciar y el backup se haya hecho después)
-                # Técnicamente si estamos en la inicial, siempre es amarilla si hay backups.
-                es_ultimo = False
-            else:
-                # Quitamos .protegido del archivo actual por si fue protegido después de restaurar
-                archivo_actual_base = archivo_actual.replace('.protegido.sql', '.sql')
-                if ultimo_backup_base != archivo_actual_base:
-                    es_ultimo = False
-                    
-        # 4. Renderizar UI
+
         st.sidebar.markdown("---")
-        st.sidebar.markdown("### 💾 Estado de Datos")
-        
-        if es_ultimo:
-            st.sidebar.success(f"🟢 **Datos Actualizados**\n\nOrigen: `{archivo_actual}`")
+        st.sidebar.markdown(TITULO_ESTADO_DATOS)
+        if estado.actualizado:
+            st.sidebar.success(f"{MENSAJE_DATOS_ACTUALIZADOS}\n\nOrigen: `{estado.archivo_origen}`")
         else:
-            st.sidebar.warning(f"🟡 **¡Backup Nuevo Disponible!**\n\nOrigen actual: `{archivo_actual}`\n\nRevisa la carpeta de Backups.")
-            
-    except Exception as e:
+            st.sidebar.warning(
+                f"{MENSAJE_BACKUP_DISPONIBLE}\n\nOrigen actual: `{estado.archivo_origen}`"
+                f"\n\n{TEXTO_REVISAR_BACKUPS}"
+            )
+    except Exception:
         st.sidebar.markdown("---")
-        st.sidebar.error("Error cargando versión de BD")
+        st.sidebar.error(MENSAJE_ERROR_VERSION)

@@ -1,13 +1,26 @@
 import os
+import sys
+
+import bcrypt
 import pandas as pd
 from sqlalchemy import create_engine, text
-import bcrypt
 
 # 1. Definir la ruta de la base de datos SQLite en la raíz del proyecto
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 DB_PATH = os.path.join(BASE_DIR, "operadores.db")
+
+# 2. Hacer importable el paquete para reutilizar los pragmas y los índices
+#    oficiales (spec 025), sin duplicar la definición de la infraestructura.
+sys.path.insert(0, os.path.join(BASE_DIR, "src"))
+
+from certificado_operadores.db import (  # noqa: E402
+    configurar_pragmas,
+    crear_indices,
+)
+
 engine_url = f"sqlite:///{DB_PATH}"
 engine = create_engine(engine_url)
+configurar_pragmas(engine)
 
 def cargar_csv(tabla_nombre, csv_path):
     """Lee un CSV y lo convierte en una tabla de SQLite"""
@@ -30,7 +43,7 @@ def cargar_csv(tabla_nombre, csv_path):
         df.to_sql(tabla_nombre, engine, if_exists='replace', index=False)
         print(f"[OK] Tabla '{tabla_nombre}' cargada ({len(df)} registros).")
     except Exception as e:
-        print(f"[ERROR] Error al cargar '{tabla_nombre}': {str(e)}")
+        print(f"[ERROR] Error al cargar '{tabla_nombre}': {e!s}")
 
 def main():
     print(f"Iniciando carga de datos hacia SQLite: {DB_PATH}")
@@ -64,7 +77,7 @@ def main():
         hashed = bcrypt.hashpw(pwd, bcrypt.gensalt()).decode('utf-8')
         
         # Sintaxis adaptada para SQLite
-        sql_usuarios = f"""
+        sql_usuarios = """
         CREATE TABLE IF NOT EXISTS dim_usuarios (
             id_usuario INTEGER PRIMARY KEY AUTOINCREMENT,
             usuario TEXT UNIQUE NOT NULL,
@@ -140,7 +153,14 @@ def main():
         print("[OK] Tablas de configuracion creadas con exito.")
     except Exception as e:
         print(f"[ERROR] Error al crear tablas de configuracion: {e}")
-        
+
+    # Crear los índices estratégicos sobre las tablas recién cargadas (spec 025).
+    try:
+        crear_indices(engine)
+        print("[OK] Indices estrategicos creados (WAL + busy_timeout activos).")
+    except Exception as e:
+        print(f"[ERROR] Error al crear los indices: {e}")
+
     print("[FINALIZADO] Proceso finalizado. La base de datos SQLite 'operadores.db' esta lista.")
 
 if __name__ == "__main__":

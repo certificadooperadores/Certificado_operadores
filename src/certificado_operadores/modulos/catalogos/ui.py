@@ -3,9 +3,9 @@
 Capa de presentación pura: lista y administra los cinco catálogos del sistema
 (empresas, vehículos, impactos, comportamientos y detalles de comportamiento) y
 delega **toda** la lectura y mutación en
-:class:`~certificado_operadores.infra.catalogos_repository.CatalogosRepository`.
+:class:`~certificado_operadores.facade_configuracion.ConfiguracionFacade`.
 No contiene sentencias SQL ni conoce el motor ni el esquema: cada operación de
-datos pasa por el repositorio.
+datos pasa por la fachada.
 
 Autor: Ing. Miguel Angel Ortiz Roldan
 """
@@ -31,10 +31,10 @@ from certificado_operadores.domain.models import (  # noqa: E402
     VIGENCIA_ACTIVA,
     VIGENCIA_ANULADA,
 )
-from certificado_operadores.infra.catalogos_repository import (  # noqa: E402
+from certificado_operadores.facade_configuracion import (  # noqa: E402
     LIMITE_DETALLES,
-    CatalogosRepository,
     ComportamientoInfo,
+    ConfiguracionFacade,
     DatosDetalleComportamiento,
     DetalleComportamientoInfo,
     EmpresaInfo,
@@ -267,7 +267,7 @@ def _id_comportamiento_por_nombre(
     return None
 
 
-def _render_empresas(repositorio: CatalogosRepository, usuario: str) -> None:
+def _render_empresas(repositorio: ConfiguracionFacade, usuario: str) -> None:
     """Renderiza y procesa la gestión de empresas (RF-01).
 
     Args:
@@ -310,7 +310,7 @@ def _render_empresas(repositorio: CatalogosRepository, usuario: str) -> None:
                 st.rerun()
 
 
-def _render_vehiculos(repositorio: CatalogosRepository, usuario: str) -> None:
+def _render_vehiculos(repositorio: ConfiguracionFacade, usuario: str) -> None:
     """Renderiza y procesa la gestión de vehículos (RF-02).
 
     Args:
@@ -340,7 +340,7 @@ def _render_vehiculos(repositorio: CatalogosRepository, usuario: str) -> None:
                 st.rerun()
 
 
-def _render_impactos(repositorio: CatalogosRepository, usuario: str) -> None:
+def _render_impactos(repositorio: ConfiguracionFacade, usuario: str) -> None:
     """Renderiza y procesa la gestión de niveles de impacto (RF-03).
 
     Args:
@@ -399,7 +399,7 @@ def _render_impactos(repositorio: CatalogosRepository, usuario: str) -> None:
                     st.rerun()
 
 
-def _render_comportamientos(repositorio: CatalogosRepository, usuario: str) -> None:
+def _render_comportamientos(repositorio: ConfiguracionFacade, usuario: str) -> None:
     """Renderiza y procesa la gestión de comportamientos (RF-04).
 
     Args:
@@ -458,7 +458,7 @@ def _render_comportamientos(repositorio: CatalogosRepository, usuario: str) -> N
                         st.rerun()
 
 
-def _render_detalles(repositorio: CatalogosRepository, usuario: str) -> None:
+def _render_detalles(repositorio: ConfiguracionFacade, usuario: str) -> None:
     """Renderiza y procesa la gestión de detalles de comportamiento (RF-05).
 
     Args:
@@ -572,7 +572,7 @@ def _render_detalles(repositorio: CatalogosRepository, usuario: str) -> None:
                     st.rerun()
 
 
-def render_catalogos(repositorio: CatalogosRepository | None = None) -> None:
+def render_catalogos(repositorio: ConfiguracionFacade | None = None) -> None:
     """Renderiza la pestaña completa de catálogos.
 
     Args:
@@ -580,7 +580,7 @@ def render_catalogos(repositorio: CatalogosRepository | None = None) -> None:
             uno con la configuración por defecto; inyectarlo facilita las
             pruebas.
     """
-    repositorio = repositorio or CatalogosRepository()
+    repositorio = repositorio or ConfiguracionFacade()
     usuario = st.session_state.get("usuario", USUARIO_POR_DEFECTO)
 
     st.title(TITULO)

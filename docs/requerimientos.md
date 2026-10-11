@@ -45,7 +45,7 @@ funcionales).
 - **RNF-01 (Desacoplamiento - Facade):** La interfaz de usuario (Streamlit) nunca ejecuta SQL directo ni contiene lógica de negocio; toda interacción fluye a través de Facades y Repositorios.
 - **RNF-02 (Rendimiento):** Consultas indexadas y optimizadas en SQLite capaces de filtrar en menos de 200 ms sobre un universo superior a 300.000 hechos históricos.
 - **RNF-03 (Seguridad):** Prohibición estricta de valores y rutas quemadas en el código; auditoría de exportaciones y modificaciones.
-- **RNF-04 (Mantenibilidad):** Suite completa de pruebas automatizadas con cobertura del 100% de casos de uso (388 pruebas en verde).
+- **RNF-04 (Mantenibilidad):** Suite completa de pruebas automatizadas con cobertura del 100% de casos de uso (373 funciones de prueba; 402 casos en verde).
 
 ## 6. Instalación y verificación
 

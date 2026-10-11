@@ -6,7 +6,7 @@ inteligentes por tipo de reporte**, los **botones de exportación en la cabecera
 (sobre la tabla) y, para los reportes de vencimiento, un **diagrama de Gantt
 temporal por concesionario** generado con matplotlib. Delega **todo** el acceso a
 datos (catálogos de filtros, consultas consolidadas y auditoría) en
-:class:`~certificado_operadores.infra.reportes_repository.ReportesRepository` y la
+:class:`~certificado_operadores.facade_reportes.ReportesFacade` y la
 generación de archivos en las funciones puras ``generar_excel``/``generar_csv``.
 No contiene sentencias de base de datos ni conoce el motor ni el esquema, y
 **nunca suma identificadores** (códigos, cédulas o IDs) ni muestra la tarjeta de
@@ -38,7 +38,7 @@ if str(_RUTA_SRC) not in sys.path:
     sys.path.append(str(_RUTA_SRC))
 
 from certificado_operadores.estilos import COLOR_PRIMARIO  # noqa: E402
-from certificado_operadores.infra.reportes_repository import (  # noqa: E402
+from certificado_operadores.facade_reportes import (  # noqa: E402
     DIAS_VENCIMIENTO_DEFECTO,
     DIAS_VENCIMIENTO_MAXIMO,
     DIAS_VENCIMIENTO_MINIMO,
@@ -47,7 +47,7 @@ from certificado_operadores.infra.reportes_repository import (  # noqa: E402
     TIPO_MIME_CSV,
     TIPO_MIME_EXCEL,
     DefinicionReporte,
-    ReportesRepository,
+    ReportesFacade,
     SeleccionFiltros,
     generar_csv,
     generar_excel,
@@ -389,7 +389,7 @@ def _render_filtro(
 
 
 def _construir_seleccion(
-    definicion: DefinicionReporte, repositorio: ReportesRepository
+    definicion: DefinicionReporte, repositorio: ReportesFacade
 ) -> tuple[SeleccionFiltros, bool]:
     """Renderiza la barra horizontal de filtros y devuelve la selección tipada.
 
@@ -637,6 +637,7 @@ def _render_graficos_analiticos(df: pd.DataFrame, definicion: DefinicionReporte)
             return partes[-1].capitalize() if partes else "Sin causal"
 
         copia_comp["Causal"] = copia_comp["Descripcion"].apply(_extraer_causal)
+
         # Excluir registros sin operador asignado para el ranking de operadores
         def _formatear_operador(fila: pd.Series) -> str:
             cod = fila.get("Codigo")
@@ -758,7 +759,7 @@ def _render_graficos_analiticos(df: pd.DataFrame, definicion: DefinicionReporte)
 def _render_resultado(
     df: pd.DataFrame | None,
     definicion: DefinicionReporte,
-    repositorio: ReportesRepository,
+    repositorio: ReportesFacade,
     usuario: str,
 ) -> None:
     """Muestra KPIs, botones de exportación, tabla y Gantt del reporte.
@@ -786,7 +787,7 @@ def _render_resultado(
     repositorio.registrar_exportacion(usuario, definicion.nombre, len(df))
 
 
-def render_reportes(repositorio: ReportesRepository | None = None) -> None:
+def render_reportes(repositorio: ReportesFacade | None = None) -> None:
     """Renderiza la vista completa de reportes y exportaciones (specs 010, 023 y 024).
 
     Args:
@@ -794,7 +795,7 @@ def render_reportes(repositorio: ReportesRepository | None = None) -> None:
             uno con la configuración por defecto; inyectarlo facilita las
             pruebas.
     """
-    repositorio = repositorio or ReportesRepository()
+    repositorio = repositorio or ReportesFacade()
     usuario = st.session_state.get("usuario", USUARIO_POR_DEFECTO)
     st.title(TITULO)
     st.markdown(f'<p class="subtitulo-metrocali">{SUBTITULO}</p>', unsafe_allow_html=True)

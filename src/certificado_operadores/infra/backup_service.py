@@ -65,6 +65,9 @@ TABLAS_COMPARACION: tuple[str, ...] = (
 TABLA_VERSION_BD = "dim_version_bd"
 """Tabla que registra el origen/versión de la base de datos activa."""
 
+ORIGEN_BD_INICIAL = "BD Inicial - Carga desde CSV"
+"""Origen registrado en ``dim_version_bd`` cuando la base se cargó desde los CSV."""
+
 USUARIO_RESTAURACION_POR_DEFECTO = "sistema"
 """Usuario registrado en ``dim_version_bd`` cuando la restauración no lo especifica."""
 
@@ -101,6 +104,47 @@ class BackupInfo:
     def tamano_mb(self) -> float:
         """Tamaño del respaldo en megabytes, redondeado a dos decimales."""
         return round(self.tamano_bytes / (1024 * 1024), 2)
+
+
+@dataclass(frozen=True)
+class VersionInfo:
+    """Última versión/origen registrado en ``dim_version_bd``.
+
+    Attributes:
+        archivo_origen: Nombre del respaldo o de la carga inicial registrada.
+        fecha_restauracion: Fecha y hora en que se registró la versión.
+    """
+
+    archivo_origen: str
+    fecha_restauracion: str
+
+
+@dataclass(frozen=True)
+class EstadoVersion:
+    """Estado consolidado del indicador de versión de datos.
+
+    Attributes:
+        archivo_origen: Origen actualmente registrado en ``dim_version_bd``.
+        fecha_restauracion: Fecha del último registro de versión.
+        actualizado: ``True`` si la base activa corresponde al respaldo más
+            reciente; ``False`` si existe un respaldo nuevo sin restaurar.
+    """
+
+    archivo_origen: str
+    fecha_restauracion: str
+    actualizado: bool
+
+
+def _nombre_base(nombre: str) -> str:
+    """Devuelve el nombre de un respaldo sin el sufijo de protección.
+
+    Args:
+        nombre: Nombre del archivo, posiblemente con ``.protegido``.
+
+    Returns:
+        El nombre sin el sufijo ``.protegido``.
+    """
+    return nombre.replace(SUFIJO_PROTEGIDO, "")
 
 
 def _copiar_con_sqlite(origen: Path, destino: Path) -> None:
@@ -218,6 +262,63 @@ class BackupService:
             if archivo.is_file() and archivo.name.endswith(EXTENSION_BACKUP)
         ]
         return sorted(respaldos, key=lambda respaldo: respaldo.fecha_modificacion, reverse=True)
+
+    def version_actual(self) -> VersionInfo | None:
+        """Lee la última versión registrada en ``dim_version_bd``.
+
+        Consulta desacoplada del indicador de versión: no ejecuta SQL en la UI
+        ni conoce el esquema de la base activa.
+
+        Returns:
+            La :class:`VersionInfo` con el origen y la fecha del último registro,
+            o ``None`` si la base no existe, la tabla no está presente o no hay
+            registros.
+        """
+        ruta = self.origen_db
+        if not ruta.is_file():
+            return None
+        conexion = sqlite3.connect(str(ruta))
+        try:
+            existe = conexion.execute(
+                "SELECT COUNT(*) FROM sqlite_master WHERE type = 'table' AND name = ?",
+                (TABLA_VERSION_BD,),
+            ).fetchone()
+            if not existe or existe[0] == 0:
+                return None
+            fila = conexion.execute(
+                f"SELECT archivo_origen, fecha_restauracion FROM {TABLA_VERSION_BD} "
+                "ORDER BY id_version DESC LIMIT 1"
+            ).fetchone()
+        except sqlite3.DatabaseError:
+            return None
+        finally:
+            conexion.close()
+        if not fila:
+            return None
+        return VersionInfo(str(fila[0] or ""), str(fila[1] or ""))
+
+    def estado_version(self) -> EstadoVersion | None:
+        """Consolida el estado de versión para el indicador lateral.
+
+        Compara el origen registrado en ``dim_version_bd`` con el respaldo más
+        reciente del directorio (ignorando el sufijo ``.protegido``) para saber
+        si la base activa corresponde a la última copia disponible.
+
+        Returns:
+            El :class:`EstadoVersion` calculado, o ``None`` si no hay versión
+            registrada.
+        """
+        version = self.version_actual()
+        if version is None:
+            return None
+        respaldos = self.listar_backups()
+        actualizado = True
+        if respaldos:
+            ultimo = _nombre_base(respaldos[0].nombre)
+            actual = _nombre_base(version.archivo_origen)
+            if version.archivo_origen == ORIGEN_BD_INICIAL or ultimo != actual:
+                actualizado = False
+        return EstadoVersion(version.archivo_origen, version.fecha_restauracion, actualizado)
 
     def crear_backup(self) -> BackupInfo:
         """Crea una copia versionada de la base de datos actual.
@@ -555,6 +656,7 @@ __all__ = [
     "EXTENSION_BACKUP",
     "FORMATO_FECHA",
     "FORMATO_FECHA_HORA",
+    "ORIGEN_BD_INICIAL",
     "PREFIJO_RESPALDO_PREVENTIVO",
     "SEPARADOR_VERSION",
     "SUFIJO_PROTEGIDO",
@@ -567,4 +669,6 @@ __all__ = [
     "BackupInfo",
     "BackupProtegidoError",
     "BackupService",
+    "EstadoVersion",
+    "VersionInfo",
 ]
