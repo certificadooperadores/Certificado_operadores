@@ -466,7 +466,14 @@ _REPORTES: tuple[_Reporte, ...] = (
             "Ruta",
         ),
         consulta="""
-            SELECT COALESCE(em.nombre_empresa, 'Sin Concesionario') AS "Empresa",
+            SELECT COALESCE(em.nombre_empresa,
+                            CASE CAST(SUBSTR(CAST(f.id_codigo AS TEXT), 1, 1) AS INTEGER)
+                                WHEN 1 THEN 'Git Masivo'
+                                WHEN 2 THEN 'Blanco y Negro Masivo'
+                                WHEN 3 THEN 'ETM'
+                                WHEN 4 THEN 'Unimetro'
+                                ELSE 'Sin Concesionario'
+                            END) AS "Empresa",
                    f.id_codigo AS "Codigo", c.id_persona AS "Cedula",
                    (p.nombres || ' ' || p.primer_apellido) AS "Nombre",
                    d.descripcion_comportamiento AS "Descripcion",
@@ -477,11 +484,16 @@ _REPORTES: tuple[_Reporte, ...] = (
             LEFT JOIN dim_codigo c ON f.id_codigo = c.id_codigo
             LEFT JOIN dim_persona p ON c.id_persona = p.id_persona
             LEFT JOIN dim_empresa em ON c.id_empresa = em.id_empresa
-            WHERE f.id_codigo IS NOT NULL
+            WHERE 1=1
+              AND f.id_codigo IS NOT NULL
               AND f.id_codigo NOT IN (10000, 20000, 30000, 40000)
         """,
         filtros=(
-            _FiltroReporte("empresa", "c.id_empresa", "Empresa"),
+            _FiltroReporte(
+                "empresa",
+                "(c.id_empresa = :emp OR CAST(SUBSTR(CAST(f.id_codigo AS TEXT), 1, 1) AS INTEGER) = :emp)",
+                "Empresa",
+            ),
             _FiltroReporte("codigo", "f.id_codigo", "Código de Operador"),
             _FiltroReporte("fecha", "DATE(f.fecha_evento)", "Rango de fechas"),
         ),
@@ -844,7 +856,10 @@ class ReportesRepository:
         for filtro in filtros:
             tipo = filtro.tipo
             if tipo == "empresa" and seleccion.empresa is not None:
-                condiciones.append(f"{filtro.columna} = :emp")
+                if ":emp" in filtro.columna:
+                    condiciones.append(filtro.columna)
+                else:
+                    condiciones.append(f"{filtro.columna} = :emp")
                 parametros["emp"] = seleccion.empresa
             elif tipo == "estado" and seleccion.estado in ESTADO_A_VIGENCIA:
                 condiciones.append(f"{filtro.columna} = :est")

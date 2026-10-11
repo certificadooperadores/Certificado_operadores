@@ -622,7 +622,7 @@ def _render_graficos_analiticos(df: pd.DataFrame, definicion: DefinicionReporte)
         st.altair_chart(chart_venc, use_container_width=True)
 
     elif definicion.id == "comportamientos_operador":
-        st.markdown("#### 📈 Analítica Dinámica Cruzada de Comportamientos (Power BI Style)")
+        st.markdown("#### 📈 Analítica Dinámica Cruzada de Comportamientos")
         st.caption(
             "💡 **Interacción Total Cruzada:** Haz clic en cualquier barra "
             "(Operador, Causal o Ruta) para filtrar las otras dos gráficas dinámicamente. "
@@ -810,7 +810,7 @@ def render_reportes(repositorio: ReportesFacade | None = None) -> None:
         seleccion, ejecutar = _construir_seleccion(definicion, repositorio)
 
     clave = f"df_report_{definicion.id}"
-    if ejecutar:
+    if ejecutar or clave not in st.session_state:
         df = repositorio.ejecutar_reporte(definicion.id, seleccion)
         st.session_state[clave] = df
     else:
